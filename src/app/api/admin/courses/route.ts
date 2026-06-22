@@ -1,0 +1,153 @@
+import { NextRequest, NextResponse } from 'next/server';
+import { getAuthUser } from '@/lib/auth';
+import { prisma } from '@/lib/prisma';
+
+export async function GET() {
+  const user = await getAuthUser();
+  if (!user || user.role !== 'admin')
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
+  const courses = await prisma.course.findMany({
+    orderBy: { createdAt: 'desc' },
+    include: {
+      instructor: {
+        select: { id: true, fullName: true, phone: true },
+      },
+    },
+  });
+
+  return NextResponse.json(courses);
+}
+
+export async function POST(req: NextRequest) {
+  const user = await getAuthUser();
+  if (!user || user.role !== 'admin')
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
+  const body = await req.json();
+  const { name, description, subject, academicYear, price, instructorId } = body;
+
+  if (!name || !subject || !academicYear || !instructorId)
+    return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
+
+  const instructor = await prisma.user.findFirst({
+    where: { id: Number(instructorId), role: 'teacher' },
+  });
+  if (!instructor) return NextResponse.json({ error: 'Instructor not found' }, { status: 404 });
+
+  const course = await prisma.course.create({
+    data: {
+      name,
+      description: description || null,
+      subject,
+      academicYear,
+      price: Number(price) || 0,
+      instructorId: Number(instructorId),
+    },
+    include: {
+      instructor: { select: { id: true, fullName: true, phone: true } },
+    },
+  });
+
+  return NextResponse.json({ success: true, course });
+}
+
+export async function PATCH(req: NextRequest) {
+  const user = await getAuthUser();
+  if (!user || user.role !== 'admin')
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
+  const body = await req.json();
+  const { id, action, ...fields } = body;
+
+  if (!id) return NextResponse.json({ error: 'Missing id' }, { status: 400 });
+
+  if (action === 'show') {
+    await prisma.course.update({ where: { id }, data: { isVisible: true } });
+    return NextResponse.json({ success: true });
+  }
+
+  if (action === 'hide') {
+    await prisma.course.update({ where: { id }, data: { isVisible: false } });
+    return NextResponse.json({ success: true });
+  }
+
+  if (action === 'update') {
+    const { name, description, subject } = fields;
+    await prisma.course.update({
+      where: { id },
+      data: {
+        name,
+        description: description || null,
+        subject,
+        academicYear: fields.academicYear,
+        price: Number(fields.price) || 0,
+        instructorId: Number(fields.instructorId),
+      },
+    });
+    return NextResponse.json({ success: true });
+  }
+
+  return NextResponse.json({ error: 'Unknown action' }, { status: 400 });
+}
+
+export async function DELETE(req: NextRequest) {
+  const user = await getAuthUser();
+  if (!user || user.role !== 'admin')
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
+  const { id } = await req.json();
+  if (!id) return NextResponse.json({ error: 'Missing id' }, { status: 400 });
+
+  const courses = await prisma.course.findMany({
+    where: { id },
+    select: { id: true },
+  });
+  const courseIds = courses.map((c) => c.id);
+
+  if (courseIds.length > 0) {
+    await prisma.enrollment.deleteMany({ where: { courseId: { in: courseIds } } });
+    await prisma.transaction.updateMany({
+      where: { courseId: { in: courseIds } },
+      data: { courseId: null },
+    });
+
+    const lessons = await prisma.lesson.findMany({
+      where: { courseId: { in: courseIds } },
+      select: { id: true },
+    });
+    const lessonIds = lessons.map((l) => l.id);
+
+    if (lessonIds.length > 0) {
+      await prisma.lessonProgress.deleteMany({ where: { lessonId: { in: lessonIds } } });
+
+      const exams = await prisma.exam.findMany({
+        where: { lessonId: { in: lessonIds } },
+        select: { id: true },
+      });
+      const examIds = exams.map((e) => e.id);
+
+      if (examIds.length > 0) {
+        const attempts = await prisma.examAttempt.findMany({
+          where: { examId: { in: examIds } },
+          select: { id: true },
+        });
+        const attemptIds = attempts.map((a) => a.id);
+        if (attemptIds.length > 0) {
+          await prisma.attemptAnswer.deleteMany({ where: { attemptId: { in: attemptIds } } });
+        }
+        await prisma.examAttempt.deleteMany({ where: { examId: { in: examIds } } });
+        // ✅ Fixed: was prisma.question (doesn't exist) → prisma.questionBank
+        await prisma.questionBank.deleteMany({ where: { courseId: { in: courseIds } } });
+        await prisma.exam.deleteMany({ where: { lessonId: { in: lessonIds } } });
+      }
+
+      await prisma.video.deleteMany({ where: { lessonId: { in: lessonIds } } });
+      await prisma.lesson.deleteMany({ where: { courseId: { in: courseIds } } });
+    }
+
+    await prisma.course.deleteMany({ where: { id: { in: courseIds } } });
+  }
+
+  return NextResponse.json({ success: true });
+}

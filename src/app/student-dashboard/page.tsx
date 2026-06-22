@@ -1,0 +1,777 @@
+// src/app/student-dashboard/page.tsx
+'use client';
+import React, { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import Image from 'next/image';
+import Header from '@/components/Header';
+import Footer from '@/components/Footer';
+import { useLang } from '@/lib/uselang';
+import {
+  User,
+  BookOpen,
+  ClipboardList,
+  Wallet,
+  CheckCircle,
+  XCircle,
+  Clock,
+  TrendingUp,
+  Loader2,
+  GraduationCap,
+  Plus,
+  Smartphone,
+  Banknote,
+  AlertCircle,
+  CheckCircle2,
+} from 'lucide-react';
+
+const gradeLabelMap: Record<string, { ar: string; en: string }> = {
+  'grade-1': { ar: 'الصف الأول الابتدائي', en: 'Grade 1' },
+  'grade-2': { ar: 'الصف الثاني الابتدائي', en: 'Grade 2' },
+  'grade-3': { ar: 'الصف الثالث الابتدائي', en: 'Grade 3' },
+  'grade-4': { ar: 'الصف الرابع الابتدائي', en: 'Grade 4' },
+  'grade-5': { ar: 'الصف الخامس الابتدائي', en: 'Grade 5' },
+  'grade-6': { ar: 'الصف السادس الابتدائي', en: 'Grade 6' },
+  'grade-7': { ar: 'الصف الأول الإعدادي', en: 'Grade 7' },
+  'grade-8': { ar: 'الصف الثاني الإعدادي', en: 'Grade 8' },
+  'grade-9': { ar: 'الصف الثالث الإعدادي', en: 'Grade 9' },
+  'grade-10': { ar: 'الصف الأول الثانوي', en: 'Grade 10' },
+  'grade-11': { ar: 'الصف الثاني الثانوي', en: 'Grade 11' },
+  'grade-12': { ar: 'الصف الثالث الثانوي', en: 'Grade 12' },
+};
+
+interface Profile {
+  id: number;
+  fullName: string;
+  phone: string;
+  email: string | null;
+  avatarUrl: string | null;
+  academicYear: string | null;
+  balance: number;
+  createdAt: string;
+}
+interface EnrolledCourse {
+  id: number;
+  enrolledAt: string;
+  progress: number;
+  completedLessons: number;
+  totalLessons: number;
+  course: {
+    id: number;
+    name: string; // ✅ was: nameAr, nameEn
+    subject: string; // ✅ was: subjectAr, subjectEn
+    academicYear: string;
+    instructor: { id: number; fullName: string; avatarUrl: string | null };
+  };
+}
+interface ExamAttempt {
+  id: number;
+  score: number | null;
+  passed: boolean | null;
+  startedAt: string;
+  submittedAt: string | null;
+  exam: {
+    id: number;
+    passingScore: number;
+    lesson: {
+      title: string; // ✅ was: titleAr, titleEn
+      course: { id: number; name: string }; // ✅ was: nameAr, nameEn
+    };
+  };
+}
+interface Transaction {
+  id: number;
+  amount: number;
+  type: string;
+  method: string;
+  status: string;
+  notes: string | null;
+  createdAt: string;
+  course: { name: string } | null; // ✅ was: nameAr, nameEn
+}
+interface DashboardData {
+  profile: Profile;
+  enrollments: EnrolledCourse[];
+  examAttempts: ExamAttempt[];
+  transactions: Transaction[];
+}
+
+const content = {
+  ar: {
+    title: 'لوحة الطالب',
+    profile: 'الملف الشخصي',
+    courses: 'الكورسات المسجّلة',
+    exams: 'نتائج الامتحانات',
+    balance: 'الرصيد والمعاملات',
+    phone: 'الهاتف',
+    email: 'البريد الإلكتروني',
+    grade: 'الصف الدراسي',
+    memberSince: 'عضو منذ',
+    noEmail: 'لا يوجد',
+    noGrade: 'غير محدد',
+    currentBalance: 'الرصيد الحالي',
+    egp: 'ج.م',
+    noCourses: 'لم تسجّل في أي كورس بعد',
+    noExams: 'لم تؤدِّ أي امتحان بعد',
+    noTransactions: 'لا توجد معاملات',
+    progress: 'التقدم',
+    lessons: 'درس',
+    completed: 'مكتمل',
+    instructor: 'المدرس',
+    passed: 'ناجح',
+    failed: 'راسب',
+    pending: 'لم يُسلَّم',
+    score: 'الدرجة',
+    passingScore: 'درجة النجاح',
+    date: 'التاريخ',
+    transactionType: 'النوع',
+    amount: 'المبلغ',
+    method: 'الوسيلة',
+    add: 'إضافة',
+    deduct: 'خصم',
+    payment: 'دفع',
+    cash: 'كاش',
+    fawry: 'فوري',
+    wallet: 'محفظة ذكية',
+    loading: 'جارٍ التحميل...',
+    watchNow: 'شاهد الكورس ←',
+    topUp: 'شحن الرصيد',
+    topUpAmount: 'المبلغ (ج.م)',
+    topUpMethod: 'طريقة الدفع',
+    topUpCash: 'كاش (بالمركز)',
+    topUpWallet: 'تحويل محفظة (فودافون / اتصالات / اورنج)',
+    topUpNotes: 'ملاحظات (اختياري)',
+    topUpNotesPlaceholder: 'مثال: رقم المعاملة أو اسمك على المحفظة',
+    topUpBtn: 'أرسل طلب الشحن',
+    topUpSent: 'تم إرسال طلبك! سيراجعه الإدارة ويُضاف رصيدك قريبًا.',
+    topUpError: 'حدث خطأ، حاول مرة أخرى',
+    topUpPending: 'طلب قيد المراجعة',
+    topUpCompleted: 'مكتمل',
+    topUpRejected: 'مرفوض',
+    walletInstructions: 'تعليمات التحويل عبر المحفظة:',
+    walletStep1: 'حوّل المبلغ المطلوب إلى رقم المركز:',
+    walletNumber: '01XXXXXXXXX',
+    walletStep2: 'اكتب رقم المعاملة أو اسمك في خانة الملاحظات أدناه',
+    walletStep3: 'انقر "أرسل طلب الشحن" وانتظر تأكيد الإدارة',
+    cashInstructions:
+      'ادفع المبلغ في مركز الدراسة واطلب من الموظف تسجيل الدفع، أو أرسل طلبًا وسيتواصل معك فريقنا.',
+  },
+  en: {
+    title: 'Student Dashboard',
+    profile: 'Profile',
+    courses: 'Enrolled Courses',
+    exams: 'Exam Results',
+    balance: 'Balance & Transactions',
+    phone: 'Phone',
+    email: 'Email',
+    grade: 'Grade',
+    memberSince: 'Member since',
+    noEmail: 'None',
+    noGrade: 'Not set',
+    currentBalance: 'Current Balance',
+    egp: 'EGP',
+    noCourses: 'No courses enrolled yet',
+    noExams: 'No exams taken yet',
+    noTransactions: 'No transactions',
+    progress: 'Progress',
+    lessons: 'lessons',
+    completed: 'completed',
+    instructor: 'Instructor',
+    passed: 'Passed',
+    failed: 'Failed',
+    pending: 'Not submitted',
+    score: 'Score',
+    passingScore: 'Passing score',
+    date: 'Date',
+    transactionType: 'Type',
+    amount: 'Amount',
+    method: 'Method',
+    add: 'Credit',
+    deduct: 'Deduct',
+    payment: 'Payment',
+    cash: 'Cash',
+    fawry: 'Fawry',
+    wallet: 'Smart Wallet',
+    loading: 'Loading...',
+    watchNow: 'Watch Course →',
+    topUp: 'Top Up Balance',
+    topUpAmount: 'Amount (EGP)',
+    topUpMethod: 'Payment method',
+    topUpCash: 'Cash (at center)',
+    topUpWallet: 'Wallet transfer (Vodafone / Etisalat / Orange)',
+    topUpNotes: 'Notes (optional)',
+    topUpNotesPlaceholder: 'e.g. transaction number or your wallet name',
+    topUpBtn: 'Send Top-Up Request',
+    topUpSent: 'Request sent! Admin will review and credit your balance soon.',
+    topUpError: 'Something went wrong, please try again',
+    topUpPending: 'Pending review',
+    topUpCompleted: 'Completed',
+    topUpRejected: 'Rejected',
+    walletInstructions: 'Wallet transfer instructions:',
+    walletStep1: 'Transfer the amount to the center number:',
+    walletNumber: '01XXXXXXXXX',
+    walletStep2: 'Write the transaction number or your name in the notes field below',
+    walletStep3: 'Click "Send Top-Up Request" and wait for admin confirmation',
+    cashInstructions:
+      'Pay at the study center and ask the staff to log your payment, or send a request and our team will contact you.',
+  },
+};
+
+function Avatar({ url, name, size = 48 }: { url: string | null; name: string; size?: number }) {
+  if (url) {
+    return (
+      <Image
+        src={url}
+        alt={name}
+        width={size}
+        height={size}
+        className="rounded-full object-cover flex-shrink-0"
+        style={{ width: size, height: size }}
+      />
+    );
+  }
+  const initials = name
+    .trim()
+    .split(' ')
+    .slice(0, 2)
+    .map((w) => w[0])
+    .join('')
+    .toUpperCase();
+  return (
+    <span
+      className="rounded-full bg-primary/15 text-primary font-bold flex items-center justify-center flex-shrink-0"
+      style={{ width: size, height: size, fontSize: size * 0.35 }}
+    >
+      {initials}
+    </span>
+  );
+}
+
+function SectionCard({
+  title,
+  icon: Icon,
+  children,
+}: {
+  title: string;
+  icon: React.ElementType;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="bg-card rounded-2xl border border-border card-shadow p-6">
+      <div className="flex items-center gap-2 mb-5">
+        <Icon size={18} className="text-primary" />
+        <h2 className="text-base font-bold text-foreground">{title}</h2>
+      </div>
+      {children}
+    </div>
+  );
+}
+
+export default function StudentDashboardPage() {
+  const { lang, toggleLang } = useLang();
+  const router = useRouter();
+  const t = content[lang];
+  const isRtl = lang === 'ar';
+  const font = isRtl ? 'var(--font-cairo)' : undefined;
+
+  const [data, setData] = useState<DashboardData | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  // Top-up form state
+  const [topUpAmount, setTopUpAmount] = useState('');
+  const [topUpMethod, setTopUpMethod] = useState<'cash' | 'wallet'>('wallet');
+  const [topUpNotes, setTopUpNotes] = useState('');
+  const [topUpLoading, setTopUpLoading] = useState(false);
+  const [topUpStatus, setTopUpStatus] = useState<'idle' | 'success' | 'error'>('idle');
+
+  const fetchDashboard = () => {
+    fetch('/api/student/dashboard')
+      .then((r) => {
+        if (r.status === 401) {
+          router.replace('/sign-up-login-screen');
+          return null;
+        }
+        if (!r.ok) throw new Error();
+        return r.json();
+      })
+      .then((d) => d && setData(d))
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(() => {
+    fetchDashboard();
+  }, []);
+
+  const handleTopUp = async () => {
+    if (!topUpAmount || Number(topUpAmount) <= 0) return;
+    setTopUpLoading(true);
+    setTopUpStatus('idle');
+    try {
+      const res = await fetch('/api/student/wallet', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          amount: Number(topUpAmount),
+          method: topUpMethod,
+          notes: topUpNotes,
+        }),
+      });
+      if (res.ok) {
+        setTopUpStatus('success');
+        setTopUpAmount('');
+        setTopUpNotes('');
+        fetchDashboard(); // refresh transactions
+      } else {
+        setTopUpStatus('error');
+      }
+    } catch {
+      setTopUpStatus('error');
+    }
+    setTopUpLoading(false);
+  };
+
+  const gradeLabel = (key: string | null) => {
+    if (!key) return t.noGrade;
+    return gradeLabelMap[key] ? (isRtl ? gradeLabelMap[key].ar : gradeLabelMap[key].en) : key;
+  };
+
+  const txLabel = (tx: Transaction) => {
+    if (tx.type === 'add') return tx.method === 'cash' ? t.cash : t.wallet;
+    if (tx.type === 'deduct') return t.deduct;
+    return t.payment;
+  };
+
+  const txStatusBadge = (status: string) => {
+    if (status === 'pending')
+      return (
+        <span
+          className="text-xs px-2 py-0.5 rounded-full bg-amber-100 text-amber-600 font-bold"
+          style={{ fontFamily: font }}
+        >
+          {t.topUpPending}
+        </span>
+      );
+    if (status === 'rejected')
+      return (
+        <span
+          className="text-xs px-2 py-0.5 rounded-full bg-red-100 text-red-500 font-bold"
+          style={{ fontFamily: font }}
+        >
+          {t.topUpRejected}
+        </span>
+      );
+    return null;
+  };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex flex-col bg-background" dir={isRtl ? 'rtl' : 'ltr'}>
+        <Header lang={lang} onToggleLang={toggleLang} currentPath="/student-dashboard" />
+        <div className="flex-1 flex items-center justify-center">
+          <Loader2 size={32} className="animate-spin text-primary" />
+        </div>
+        <Footer lang={lang} />
+      </div>
+    );
+  }
+
+  if (!data) return null;
+  const { profile, enrollments, examAttempts, transactions } = data;
+
+  return (
+    <div
+      className="min-h-screen flex flex-col bg-background"
+      dir={isRtl ? 'rtl' : 'ltr'}
+      style={{ fontFamily: font }}
+    >
+      <Header lang={lang} onToggleLang={toggleLang} currentPath="/student-dashboard" />
+
+      <main className="flex-1 max-w-screen-xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-8">
+        <h1 className="text-2xl font-extrabold text-foreground mb-6" style={{ fontFamily: font }}>
+          {t.title}
+        </h1>
+
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* ── Left column ── */}
+          <div className="flex flex-col gap-6">
+            {/* Profile */}
+            <SectionCard title={t.profile} icon={User}>
+              <div className="flex flex-col items-center text-center gap-3">
+                <Avatar url={profile.avatarUrl} name={profile.fullName} size={72} />
+                <div>
+                  <p className="text-lg font-bold text-foreground">{profile.fullName}</p>
+                  <p className="text-sm text-muted-foreground mt-0.5">
+                    {gradeLabel(profile.academicYear)}
+                  </p>
+                </div>
+              </div>
+              <div className="mt-4 flex flex-col gap-2 text-sm">
+                <div className="flex justify-between gap-2">
+                  <span className="text-muted-foreground">{t.phone}</span>
+                  <span className="font-medium text-foreground" dir="ltr">
+                    {profile.phone}
+                  </span>
+                </div>
+                <div className="flex justify-between gap-2">
+                  <span className="text-muted-foreground">{t.email}</span>
+                  <span className="font-medium text-foreground" dir="ltr">
+                    {profile.email ?? t.noEmail}
+                  </span>
+                </div>
+                <div className="flex justify-between gap-2">
+                  <span className="text-muted-foreground">{t.memberSince}</span>
+                  <span className="font-medium text-foreground" dir="ltr">
+                    {new Date(profile.createdAt).toLocaleDateString('en-EG')}
+                  </span>
+                </div>
+              </div>
+            </SectionCard>
+
+            {/* Balance + Top Up */}
+            <SectionCard title={t.balance} icon={Wallet}>
+              {/* Current balance */}
+              <div className="flex items-center justify-between p-4 rounded-xl bg-primary/5 border border-primary/20 mb-5">
+                <span
+                  className="text-sm font-semibold text-muted-foreground"
+                  style={{ fontFamily: font }}
+                >
+                  {t.currentBalance}
+                </span>
+                <span className="text-2xl font-extrabold text-primary" dir="ltr">
+                  {profile.balance} {t.egp}
+                </span>
+              </div>
+
+              {/* Top-up form */}
+              <div className="mb-5">
+                <p
+                  className="text-sm font-bold text-foreground mb-3 flex items-center gap-2"
+                  style={{ fontFamily: font }}
+                >
+                  <Plus size={15} className="text-primary" />
+                  {t.topUp}
+                </p>
+
+                {/* Method selector */}
+                <div className="flex gap-2 mb-3">
+                  <button
+                    onClick={() => setTopUpMethod('wallet')}
+                    className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl border text-xs font-bold transition-all ${topUpMethod === 'wallet' ? 'border-primary bg-primary/10 text-primary' : 'border-border text-muted-foreground hover:border-primary/40'}`}
+                    style={{ fontFamily: font }}
+                  >
+                    <Smartphone size={13} />
+                    {t.topUpWallet}
+                  </button>
+                  <button
+                    onClick={() => setTopUpMethod('cash')}
+                    className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl border text-xs font-bold transition-all ${topUpMethod === 'cash' ? 'border-primary bg-primary/10 text-primary' : 'border-border text-muted-foreground hover:border-primary/40'}`}
+                    style={{ fontFamily: font }}
+                  >
+                    <Banknote size={13} />
+                    {t.topUpCash}
+                  </button>
+                </div>
+
+                {/* Instructions */}
+                {topUpMethod === 'wallet' && (
+                  <div
+                    className="rounded-xl bg-muted/40 p-3 mb-3 text-xs text-muted-foreground flex flex-col gap-1"
+                    style={{ fontFamily: font }}
+                  >
+                    <p className="font-bold text-foreground">{t.walletInstructions}</p>
+                    <p>
+                      1. {t.walletStep1}{' '}
+                      <span className="font-bold text-primary" dir="ltr">
+                        {t.walletNumber}
+                      </span>
+                    </p>
+                    <p>2. {t.walletStep2}</p>
+                    <p>3. {t.walletStep3}</p>
+                  </div>
+                )}
+                {topUpMethod === 'cash' && (
+                  <div
+                    className="rounded-xl bg-muted/40 p-3 mb-3 text-xs text-muted-foreground"
+                    style={{ fontFamily: font }}
+                  >
+                    {t.cashInstructions}
+                  </div>
+                )}
+
+                {/* Amount input */}
+                <label
+                  className="text-xs font-semibold text-foreground mb-1 block"
+                  style={{ fontFamily: font }}
+                >
+                  {t.topUpAmount}
+                </label>
+                <input
+                  type="number"
+                  min="1"
+                  value={topUpAmount}
+                  onChange={(e) => setTopUpAmount(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl border border-border bg-background text-foreground text-sm outline-none focus:ring-2 focus:ring-primary/30 transition-all mb-2"
+                  dir="ltr"
+                  placeholder="100"
+                />
+
+                {/* Notes input */}
+                <label
+                  className="text-xs font-semibold text-foreground mb-1 block"
+                  style={{ fontFamily: font }}
+                >
+                  {t.topUpNotes}
+                </label>
+                <textarea
+                  value={topUpNotes}
+                  onChange={(e) => setTopUpNotes(e.target.value)}
+                  placeholder={t.topUpNotesPlaceholder}
+                  rows={2}
+                  className="w-full px-3 py-2 rounded-xl border border-border bg-background text-foreground text-xs outline-none focus:ring-2 focus:ring-primary/30 transition-all resize-none mb-3"
+                  style={{ fontFamily: font }}
+                />
+
+                {/* Feedback */}
+                {topUpStatus === 'success' && (
+                  <div className="flex items-start gap-2 p-3 rounded-xl bg-green-50 border border-green-200 mb-3">
+                    <CheckCircle2 size={15} className="text-green-600 flex-shrink-0 mt-0.5" />
+                    <p
+                      className="text-xs text-green-700 font-semibold"
+                      style={{ fontFamily: font }}
+                    >
+                      {t.topUpSent}
+                    </p>
+                  </div>
+                )}
+                {topUpStatus === 'error' && (
+                  <div className="flex items-start gap-2 p-3 rounded-xl bg-red-50 border border-red-200 mb-3">
+                    <AlertCircle size={15} className="text-red-500 flex-shrink-0 mt-0.5" />
+                    <p className="text-xs text-red-600 font-semibold" style={{ fontFamily: font }}>
+                      {t.topUpError}
+                    </p>
+                  </div>
+                )}
+
+                <button
+                  onClick={handleTopUp}
+                  disabled={topUpLoading || !topUpAmount || Number(topUpAmount) <= 0}
+                  className="w-full py-2.5 rounded-xl gradient-primary text-white text-sm font-bold shadow hover:opacity-90 active:scale-95 transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+                  style={{ fontFamily: font }}
+                >
+                  {topUpLoading ? (
+                    <Loader2 size={15} className="animate-spin" />
+                  ) : (
+                    <>
+                      <Plus size={15} />
+                      {t.topUpBtn}
+                    </>
+                  )}
+                </button>
+              </div>
+
+              {/* Transaction history */}
+              {transactions.length === 0 ? (
+                <p
+                  className="text-sm text-muted-foreground text-center py-4"
+                  style={{ fontFamily: font }}
+                >
+                  {t.noTransactions}
+                </p>
+              ) : (
+                <div className="flex flex-col gap-2">
+                  {transactions.map((tx) => (
+                    <div
+                      key={tx.id}
+                      className="flex items-center justify-between gap-2 py-2 border-b border-border last:border-0"
+                    >
+                      <div className="flex flex-col min-w-0 gap-0.5">
+                        <span
+                          className="text-xs font-semibold text-foreground flex items-center gap-1.5 flex-wrap"
+                          style={{ fontFamily: font }}
+                        >
+                          {txLabel(tx)}
+                          {/* ✅ was: isRtl ? tx.course.nameAr : tx.course.nameEn */}
+                          {tx.course && ` — ${tx.course.name}`}
+                          {txStatusBadge(tx.status)}
+                        </span>
+                        <span className="text-xs text-muted-foreground" dir="ltr">
+                          {new Date(tx.createdAt).toLocaleDateString('en-EG')}
+                        </span>
+                      </div>
+                      <span
+                        className={`text-sm font-bold flex-shrink-0 ${tx.type === 'add' ? 'text-green-600' : 'text-red-500'}`}
+                        dir="ltr"
+                      >
+                        {tx.type === 'add' ? '+' : '-'}
+                        {tx.amount} {t.egp}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </SectionCard>
+          </div>
+
+          {/* ── Right column ── */}
+          <div className="lg:col-span-2 flex flex-col gap-6">
+            {/* Enrolled Courses */}
+            <SectionCard title={t.courses} icon={BookOpen}>
+              {enrollments.length === 0 ? (
+                <div className="flex flex-col items-center py-10 gap-2">
+                  <GraduationCap size={40} className="text-muted-foreground/30" />
+                  <p className="text-sm text-muted-foreground" style={{ fontFamily: font }}>
+                    {t.noCourses}
+                  </p>
+                </div>
+              ) : (
+                <div className="flex flex-col gap-4">
+                  {enrollments.map((e) => (
+                    <div
+                      key={e.id}
+                      onClick={() =>
+                        router.push(`/student-dashboard/courses/${e.course.id}/lessons`)
+                      }
+                      className="p-4 rounded-xl border border-border bg-background hover:bg-muted/20 hover:border-primary/40 transition-all cursor-pointer group"
+                    >
+                      <div className="flex items-start justify-between gap-3 mb-3">
+                        <div className="min-w-0">
+                          {/* ✅ was: isRtl ? e.course.nameAr : e.course.nameEn */}
+                          <p
+                            className="font-bold text-foreground truncate group-hover:text-primary transition-colors"
+                            style={{ fontFamily: font }}
+                          >
+                            {e.course.name}
+                          </p>
+                          {/* ✅ was: isRtl ? e.course.subjectAr : e.course.subjectEn */}
+                          <p
+                            className="text-xs text-muted-foreground mt-0.5"
+                            style={{ fontFamily: font }}
+                          >
+                            {e.course.subject} · {gradeLabel(e.course.academicYear)}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-1.5 flex-shrink-0">
+                          <Avatar
+                            url={e.course.instructor.avatarUrl}
+                            name={e.course.instructor.fullName}
+                            size={24}
+                          />
+                          <span
+                            className="text-xs text-muted-foreground"
+                            style={{ fontFamily: font }}
+                          >
+                            {e.course.instructor.fullName}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <div className="flex-1 h-2 bg-muted rounded-full overflow-hidden">
+                          <div
+                            className="h-full bg-primary rounded-full transition-all duration-500"
+                            style={{ width: `${e.progress}%` }}
+                          />
+                        </div>
+                        <span className="text-xs font-bold text-primary flex-shrink-0">
+                          {e.progress}%
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between mt-2">
+                        <p className="text-xs text-muted-foreground" style={{ fontFamily: font }}>
+                          {e.completedLessons} / {e.totalLessons} {t.lessons}
+                        </p>
+                        <span
+                          className="text-xs font-bold text-primary opacity-0 group-hover:opacity-100 transition-opacity"
+                          style={{ fontFamily: font }}
+                        >
+                          {t.watchNow}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </SectionCard>
+
+            {/* Exam Results */}
+            <SectionCard title={t.exams} icon={ClipboardList}>
+              {examAttempts.length === 0 ? (
+                <div className="flex flex-col items-center py-10 gap-2">
+                  <TrendingUp size={40} className="text-muted-foreground/30" />
+                  <p className="text-sm text-muted-foreground" style={{ fontFamily: font }}>
+                    {t.noExams}
+                  </p>
+                </div>
+              ) : (
+                <div className="flex flex-col gap-3">
+                  {examAttempts.map((attempt) => (
+                    <div
+                      key={attempt.id}
+                      className="p-4 rounded-xl border border-border bg-background"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          {/* ✅ was: isRtl ? attempt.exam.lesson.titleAr : attempt.exam.lesson.titleEn */}
+                          <p
+                            className="font-semibold text-foreground text-sm truncate"
+                            style={{ fontFamily: font }}
+                          >
+                            {attempt.exam.lesson.title}
+                          </p>
+                          {/* ✅ was: isRtl ? ...course.nameAr : ...course.nameEn */}
+                          <p
+                            className="text-xs text-muted-foreground mt-0.5 truncate"
+                            style={{ fontFamily: font }}
+                          >
+                            {attempt.exam.lesson.course.name}
+                          </p>
+                        </div>
+                        {attempt.submittedAt ? (
+                          <span
+                            className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold flex-shrink-0 ${attempt.passed ? 'bg-green-500/10 text-green-600' : 'bg-red-500/10 text-red-500'}`}
+                            style={{ fontFamily: font }}
+                          >
+                            {attempt.passed ? <CheckCircle size={11} /> : <XCircle size={11} />}
+                            {attempt.passed ? t.passed : t.failed}
+                          </span>
+                        ) : (
+                          <span
+                            className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-muted text-muted-foreground flex-shrink-0"
+                            style={{ fontFamily: font }}
+                          >
+                            <Clock size={11} />
+                            {t.pending}
+                          </span>
+                        )}
+                      </div>
+                      {attempt.submittedAt && (
+                        <div className="flex items-center gap-4 mt-2 text-xs text-muted-foreground">
+                          <span style={{ fontFamily: font }}>
+                            {t.score}:{' '}
+                            <span className="font-bold text-foreground">
+                              {attempt.score ?? '—'}
+                            </span>
+                          </span>
+                          <span style={{ fontFamily: font }}>
+                            {t.passingScore}:{' '}
+                            <span className="font-bold text-foreground">
+                              {attempt.exam.passingScore}
+                            </span>
+                          </span>
+                          <span dir="ltr">
+                            {new Date(attempt.submittedAt).toLocaleDateString('en-EG')}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </SectionCard>
+          </div>
+        </div>
+      </main>
+
+      <Footer lang={lang} />
+    </div>
+  );
+}

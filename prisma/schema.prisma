@@ -1,0 +1,229 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlserver"
+  url      = env("DATABASE_URL")
+}
+
+// ── Users ──────────────────────────────────────────────────────
+model User {
+  id             Int      @id @default(autoincrement())
+  fullName       String   @db.NVarChar(100)
+  phone          String   @unique @db.VarChar(11)
+  email          String?  @db.NVarChar(100)
+  password       String   @db.NVarChar(255)
+  academicYear   String?  @db.VarChar(20)
+  role           String   @default("student") @db.VarChar(20)
+  isActive       Boolean  @default(true)
+  avatarUrl      String?  @db.NVarChar(500)
+  whatsappNumber String?  @db.VarChar(20)
+  balance        Float    @default(0)
+  createdAt      DateTime @default(now())
+
+  courses       Course[]         @relation("InstructorCourses")
+  enrollments   Enrollment[]     @relation("StudentEnrollments")
+  transactions  Transaction[]    @relation("StudentTransactions")
+  processedTx   Transaction[]    @relation("AdminTransactions")
+  examAttempts  ExamAttempt[]    @relation("StudentExamAttempts")
+  progress      LessonProgress[] @relation("StudentProgress")
+
+  @@map("users")
+}
+
+// ── Courses ────────────────────────────────────────────────────
+model Course {
+  id            Int      @id @default(autoincrement())
+  name          String   @db.NVarChar(150)
+  description   String?  @db.NVarChar(500)
+  subject       String   @db.NVarChar(100)
+  academicYear  String   @db.VarChar(20)
+  price         Float    @default(0)
+  isVisible     Boolean  @default(true)
+  createdAt     DateTime @default(now())
+
+  instructor    User   @relation("InstructorCourses", fields: [instructorId], references: [id], onDelete: Cascade)
+  instructorId  Int
+
+  lessons       Lesson[]
+  enrollments   Enrollment[]
+  transactions  Transaction[]
+  bankQuestions QuestionBank[]
+
+  @@map("courses")
+}
+
+// ── Enrollments ────────────────────────────────────────────────
+model Enrollment {
+  id         Int      @id @default(autoincrement())
+  enrolledAt DateTime @default(now())
+
+  student   User   @relation("StudentEnrollments", fields: [studentId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  studentId Int
+
+  course   Course @relation(fields: [courseId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  courseId Int
+
+  @@unique([studentId, courseId])
+  @@map("enrollments")
+}
+
+// ── Lessons ────────────────────────────────────────────────────
+model Lesson {
+  id        Int      @id @default(autoincrement())
+  title     String   @db.NVarChar(200)
+  type      String   @db.VarChar(10)  // "video" | "exam"
+  order     Int
+  isVisible Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  course   Course @relation(fields: [courseId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  courseId Int
+
+  video    Video?
+  exam     Exam?
+  progress LessonProgress[]
+
+  @@map("lessons")
+}
+
+// ── Videos ─────────────────────────────────────────────────────
+model Video {
+  id          Int      @id @default(autoincrement())
+  vimeoId     String   @db.NVarChar(100)
+  durationSec Int?
+  createdAt   DateTime @default(now())
+
+  lesson   Lesson @relation(fields: [lessonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  lessonId Int    @unique
+
+  @@map("videos")
+}
+
+// ── Exams ──────────────────────────────────────────────────────
+model Exam {
+  id              Int      @id @default(autoincrement())
+  durationMinutes Int?
+  passingScore    Int      @default(50)
+  createdAt       DateTime @default(now())
+
+  lesson   Lesson @relation(fields: [lessonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  lessonId Int    @unique
+
+  examQuestions ExamQuestion[]
+  attempts      ExamAttempt[]
+
+  @@map("exams")
+}
+
+// ── Question Bank ───────────────────────────────────────────────
+model QuestionBank {
+  id            Int      @id @default(autoincrement())
+  text          String   @db.NVarChar(500)
+  type          String   @db.VarChar(15)   
+  optionsJson   String   @db.NVarChar(1000)
+  correctAnswer String   @db.NVarChar(2000)
+  lessonTag     String   @db.NVarChar(200)
+  createdAt     DateTime @default(now())
+
+  course   Course @relation(fields: [courseId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  courseId Int
+
+  examQuestions ExamQuestion[]
+
+  @@map("question_bank")
+}
+
+// ── Exam ↔ Question join ───────────────────────────────────────
+model ExamQuestion {
+  id    Int @id @default(autoincrement())
+  order Int @default(0)
+    mark  Int @default(1) 
+
+  exam   Exam @relation(fields: [examId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  examId Int
+
+  question   QuestionBank @relation(fields: [questionId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  questionId Int
+
+  answers AttemptAnswer[]
+
+  @@unique([examId, questionId])
+  @@map("exam_questions")
+}
+
+// ── Exam Attempts ──────────────────────────────────────────────
+model ExamAttempt {
+  id          Int       @id @default(autoincrement())
+  score       Float?
+  passed      Boolean?
+  startedAt   DateTime  @default(now())
+  submittedAt DateTime?
+
+  student   User @relation("StudentExamAttempts", fields: [studentId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  studentId Int
+
+  exam   Exam @relation(fields: [examId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  examId Int
+
+  answers AttemptAnswer[]
+
+  @@map("exam_attempts")
+}
+
+// ── Attempt Answers ────────────────────────────────────────────
+// ── Attempt Answers ────────────────────────────────────────────
+model AttemptAnswer {
+  id          Int      @id @default(autoincrement())
+  givenAnswer String   @db.NVarChar(Max)
+  isCorrect   Boolean?
+  gradedScore Float?
+  graderNotes String?  @db.NVarChar(1000)
+
+  attempt   ExamAttempt @relation(fields: [attemptId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  attemptId Int
+
+  examQuestion   ExamQuestion @relation(fields: [examQuestionId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  examQuestionId Int
+
+  @@map("attempt_answers")
+}
+// ── Lesson Progress ────────────────────────────────────────────
+model LessonProgress {
+  id          Int       @id @default(autoincrement())
+  completed   Boolean   @default(false)
+  completedAt DateTime?
+
+  student   User @relation("StudentProgress", fields: [studentId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  studentId Int
+
+  lesson   Lesson @relation(fields: [lessonId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  lessonId Int
+
+  @@unique([studentId, lessonId])
+  @@map("lesson_progress")
+}
+
+// ── Transactions ───────────────────────────────────────────────
+model Transaction {
+  id        Int      @id @default(autoincrement())
+  amount    Float
+  type      String   @db.VarChar(20)  // "add" | "deduct" | "payment"
+  method    String   @db.VarChar(20)  // "cash" | "fawry"
+  status    String   @default("completed") @db.VarChar(20)
+  notes     String?  @db.NVarChar(300)
+  createdAt DateTime @default(now())
+
+  student   User @relation("StudentTransactions", fields: [studentId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  studentId Int
+
+  processedBy   User? @relation("AdminTransactions", fields: [processedById], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  processedById Int?
+
+  course   Course? @relation(fields: [courseId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  courseId Int?
+
+  @@map("transactions")
+}

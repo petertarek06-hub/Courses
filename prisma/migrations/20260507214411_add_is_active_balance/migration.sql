@@ -1,0 +1,20 @@
+BEGIN TRY
+
+BEGIN TRAN;
+
+-- AlterTable
+ALTER TABLE [dbo].[users] ADD [balance] FLOAT(53) NOT NULL CONSTRAINT [users_balance_df] DEFAULT 0,
+[isActive] BIT NOT NULL CONSTRAINT [users_isActive_df] DEFAULT 1;
+
+COMMIT TRAN;
+
+END TRY
+BEGIN CATCH
+
+IF @@TRANCOUNT > 0
+BEGIN
+    ROLLBACK TRAN;
+END;
+THROW
+
+END CATCH
