@@ -12,7 +12,7 @@ interface UserPayload extends JWTPayload {
   fullName?: string;
 }
 
-const protectedRoutes = ['/admin', '/student-dashboard', '/instructor-dashboard'];
+const protectedRoutes = ['/admin', '/student-dashboard', '/teacher-dashboard'];
 const authRoutes = ['/sign-up-login-screen'];
 
 export async function middleware(req: NextRequest) {
@@ -38,7 +38,7 @@ export async function middleware(req: NextRequest) {
       return NextResponse.redirect(new URL('/', req.url));
     }
 
-    if (pathname.startsWith('/instructor-dashboard') && user.role !== 'teacher') {
+    if (pathname.startsWith('/teacher-dashboard') && user.role !== 'teacher') {
       return NextResponse.redirect(new URL('/', req.url));
     }
 

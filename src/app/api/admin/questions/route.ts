@@ -13,9 +13,9 @@ async function authorize(courseId: number) {
   if (user.role === 'teacher') {
     const course = await prisma.course.findUnique({
       where: { id: courseId },
-      select: { instructorId: true },
+      select: { teacherId: true },
     });
-    if (!course || course.instructorId !== user.id) {
+    if (!course || course.teacherId !== user.id) {
       return { user: null, error: NextResponse.json({ error: 'Forbidden' }, { status: 403 }) };
     }
   }

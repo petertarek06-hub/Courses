@@ -2,6 +2,7 @@
 import jwt from 'jsonwebtoken';
 import { cookies } from 'next/headers';
 import bcrypt from 'bcryptjs';
+import { prisma } from '@/lib/prisma';
 
 // ✅ Throw at startup if secret is missing — never use a hardcoded fallback in production
 const JWT_SECRET = process.env.JWT_SECRET;
@@ -43,11 +44,30 @@ export async function setAuthCookie(payload: JwtPayload) {
   });
 }
 
+// A JWT can still verify (correct signature, not expired) even after its
+// underlying user row is gone — e.g. the DB was reset, or the account was
+// deleted. This confirms the user still actually exists before trusting the
+// token, and clears the stale cookie if not, so the person isn't stuck
+// looking "logged in" to a ghost session.
 export async function getAuthUser(): Promise<JwtPayload | null> {
   const cookieStore = await cookies();
   const token = cookieStore.get(COOKIE_NAME)?.value;
   if (!token) return null;
-  return verifyToken(token);
+
+  const payload = verifyToken(token);
+  if (!payload) return null;
+
+  const exists = await prisma.user.findUnique({
+    where: { id: payload.id },
+    select: { id: true },
+  });
+
+  if (!exists) {
+    cookieStore.delete(COOKIE_NAME);
+    return null;
+  }
+
+  return payload;
 }
 
 export async function clearAuthCookie() {

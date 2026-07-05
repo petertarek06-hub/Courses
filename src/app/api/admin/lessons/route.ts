@@ -12,9 +12,9 @@ async function authorize(courseId?: number) {
   if (user.role === 'teacher' && courseId) {
     const course = await prisma.course.findUnique({
       where: { id: courseId },
-      select: { instructorId: true },
+      select: { teacherId: true },
     });
-    if (!course || course.instructorId !== user.id)
+    if (!course || course.teacherId !== user.id)
       return { user: null, error: NextResponse.json({ error: 'Forbidden' }, { status: 403 }) };
   }
   return { user, error: null };
@@ -50,10 +50,10 @@ export async function GET(req: NextRequest) {
 
 // ── POST /api/admin/lessons ────────────────────────────────────
 // Body for video: { courseId, title, type:"video", vimeoId, durationSec? }
-// Body for exam:  { courseId, title, type:"exam", durationMinutes?, passingScore? }
+// Body for exam:  { courseId, title, type:"exam", durationMinutes?, passingScore?, scheduledAt? }
+//   scheduledAt: ISO-8601 string or null/undefined = immediately available
 export async function POST(req: NextRequest) {
   const body = await req.json();
-  // ✅ Fixed: was titleAr/titleEn → single title
   const { courseId, title, type } = body;
 
   if (!courseId || !title || !type)
@@ -76,7 +76,7 @@ export async function POST(req: NextRequest) {
 
     const lesson = await prisma.lesson.create({
       data: {
-        title, // ✅ single field
+        title,
         type: 'video',
         order: nextOrder,
         courseId: Number(courseId),
@@ -93,10 +93,18 @@ export async function POST(req: NextRequest) {
   }
 
   if (type === 'exam') {
-    const { durationMinutes, passingScore } = body;
+    const { durationMinutes, passingScore, scheduledAt } = body;
+
+    // Parse scheduledAt — accept ISO string or null/undefined
+    const scheduledDate: Date | null =
+      scheduledAt && typeof scheduledAt === 'string' ? new Date(scheduledAt) : null;
+
+    if (scheduledDate && isNaN(scheduledDate.getTime()))
+      return NextResponse.json({ error: 'Invalid scheduledAt date' }, { status: 400 });
+
     const lesson = await prisma.lesson.create({
       data: {
-        title, // ✅ single field
+        title,
         type: 'exam',
         order: nextOrder,
         courseId: Number(courseId),
@@ -104,6 +112,7 @@ export async function POST(req: NextRequest) {
           create: {
             durationMinutes: durationMinutes ? Number(durationMinutes) : null,
             passingScore: passingScore ? Number(passingScore) : 50,
+            scheduledAt: scheduledDate,
           },
         },
       },
@@ -116,13 +125,14 @@ export async function POST(req: NextRequest) {
 }
 
 // ── PATCH /api/admin/lessons ───────────────────────────────────
-// action: "updateVideo"        { id, title, vimeoId, durationSec? }
-// action: "updateExam"         { id, title, durationMinutes?, passingScore? }
-// action: "toggleVisibility"   { id }
-// action: "reorder"            { id, direction:"up"|"down" }
-// action: "addExamQuestions"   { id(lessonId), questionIds:[...] }
-// action: "removeExamQuestion" { id(lessonId), examQuestionId }
-// action: "reorderExamQuestion"{ id(lessonId), examQuestionId, direction }
+// action: "updateVideo"              { id, title, vimeoId, durationSec? }
+// action: "updateExam"               { id, title, durationMinutes?, passingScore?, scheduledAt? }
+// action: "toggleVisibility"         { id }
+// action: "reorder"                  { id, direction:"up"|"down" }
+// action: "addExamQuestions"         { id(lessonId), questionIds:[...] }
+// action: "removeExamQuestion"       { id(lessonId), examQuestionId }
+// action: "reorderExamQuestion"      { id(lessonId), examQuestionId, direction }
+// action: "updateExamQuestionMark"   { id(lessonId), examQuestionId, mark }
 export async function PATCH(req: NextRequest) {
   const body = await req.json();
   const { id, action } = body;
@@ -140,7 +150,6 @@ export async function PATCH(req: NextRequest) {
 
   // ── updateVideo ──────────────────────────────────────────────
   if (action === 'updateVideo') {
-    // ✅ Fixed: was titleAr/titleEn → title
     const { title, vimeoId, durationSec } = body;
     if (!title || !vimeoId)
       return NextResponse.json({ error: 'title and vimeoId required' }, { status: 400 });
@@ -163,9 +172,18 @@ export async function PATCH(req: NextRequest) {
 
   // ── updateExam ───────────────────────────────────────────────
   if (action === 'updateExam') {
-    // ✅ Fixed: was titleAr/titleEn → title
-    const { title, durationMinutes, passingScore } = body;
+    const { title, durationMinutes, passingScore, scheduledAt } = body;
     if (!title) return NextResponse.json({ error: 'title required' }, { status: 400 });
+
+    // Parse scheduledAt — null means "clear the schedule" (always available)
+    let scheduledDate: Date | null = null;
+    if (scheduledAt === null || scheduledAt === '') {
+      scheduledDate = null; // explicitly cleared
+    } else if (scheduledAt && typeof scheduledAt === 'string') {
+      scheduledDate = new Date(scheduledAt);
+      if (isNaN(scheduledDate.getTime()))
+        return NextResponse.json({ error: 'Invalid scheduledAt date' }, { status: 400 });
+    }
 
     await prisma.lesson.update({ where: { id: Number(id) }, data: { title } });
     await prisma.exam.updateMany({
@@ -173,6 +191,10 @@ export async function PATCH(req: NextRequest) {
       data: {
         durationMinutes: durationMinutes ? Number(durationMinutes) : null,
         passingScore: passingScore ? Number(passingScore) : 50,
+        // Only update scheduledAt when explicitly provided in the request body
+        ...(Object.prototype.hasOwnProperty.call(body, 'scheduledAt') && {
+          scheduledAt: scheduledDate,
+        }),
       },
     });
     return NextResponse.json({ ok: true });
@@ -275,6 +297,20 @@ export async function PATCH(req: NextRequest) {
       prisma.examQuestion.update({ where: { id: a.id }, data: { order: b.order } }),
       prisma.examQuestion.update({ where: { id: b.id }, data: { order: a.order } }),
     ]);
+    return NextResponse.json({ ok: true });
+  }
+
+  // ── updateExamQuestionMark ───────────────────────────────────
+  if (action === 'updateExamQuestionMark') {
+    const { examQuestionId, mark } = body;
+    const safeMark = Number(mark);
+    if (!examQuestionId || !Number.isFinite(safeMark) || safeMark < 1)
+      return NextResponse.json({ error: 'examQuestionId and mark ≥ 1 required' }, { status: 400 });
+
+    await prisma.examQuestion.update({
+      where: { id: Number(examQuestionId) },
+      data: { mark: safeMark },
+    });
     return NextResponse.json({ ok: true });
   }
 

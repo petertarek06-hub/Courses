@@ -16,7 +16,7 @@ export async function GET() {
       subject: true, // ✅ was: subjectAr, subjectEn
       academicYear: true,
       price: true,
-      instructor: {
+      teacher: {
         select: {
           id: true,
           fullName: true,

@@ -37,8 +37,8 @@ const sidebarLinks = (lang: 'ar' | 'en') => [
   { label: lang === 'ar' ? 'نظرة عامة' : 'Overview', href: '/admin', icon: LayoutDashboard },
   { label: lang === 'ar' ? 'الطلاب' : 'Students', href: '/admin/students', icon: Users },
   {
-    label: lang === 'ar' ? 'المدرسين' : 'Instructors',
-    href: '/admin/instructors',
+    label: lang === 'ar' ? 'المدرسين' : 'Teachers',
+    href: '/admin/teachers',
     icon: GraduationCap,
   },
   { label: lang === 'ar' ? 'الكورسات' : 'Courses', href: '/admin/courses', icon: BookOpen },

@@ -100,15 +100,32 @@ export async function PATCH(req: NextRequest) {
       return NextResponse.json({ error: 'Student not found' }, { status: 404 });
     }
 
-    const newBalance =
-      action === 'addBalance'
-        ? (student.balance ?? 0) + Number(amount)
-        : Math.max(0, (student.balance ?? 0) - Number(amount));
+    // Deducting more than the current balance just zeroes it out, rather
+    // than going negative or throwing.
+    const delta =
+      action === 'addBalance' ? Number(amount) : -Math.min(Number(amount), student.balance ?? 0);
+    const newBalance = Math.max(0, (student.balance ?? 0) + delta);
 
-    await prisma.user.update({ where: { id }, data: { balance: newBalance } });
+    // ✅ Every balance change now produces a Transaction row too — this was
+    // previously a silent mutation with no ledger trace.
+    await prisma.$transaction([
+      prisma.user.update({ where: { id }, data: { balance: newBalance } }),
+      prisma.transaction.create({
+        data: {
+          studentId: id,
+          amount: Math.abs(delta),
+          type: action === 'addBalance' ? 'topup' : 'adjustment',
+          method: 'manual',
+          notes:
+            action === 'addBalance'
+              ? 'Manual balance addition by admin'
+              : 'Manual balance deduction by admin',
+        },
+      }),
+    ]);
+
     return NextResponse.json({ success: true, newBalance });
   }
-
   return NextResponse.json({ error: 'Unknown action' }, { status: 400 });
 }
 

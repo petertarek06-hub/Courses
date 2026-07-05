@@ -20,7 +20,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   const course = await prisma.course.findUnique({
     where: { id: courseId },
     include: {
-      instructor: { select: { id: true, fullName: true, avatarUrl: true } },
+      teacher: { select: { id: true, fullName: true, avatarUrl: true } },
       lessons: {
         where: { isVisible: true }, // ✅ removed type:'video' — include exams too
         orderBy: { order: 'asc' },

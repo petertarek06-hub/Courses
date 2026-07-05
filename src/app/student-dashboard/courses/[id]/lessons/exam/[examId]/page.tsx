@@ -102,7 +102,7 @@ const T = {
     of: 'of',
     mark: 'mark',
     essayPlaceholder: 'Write your answer here...',
-    essayNote: 'This question will be graded manually by the instructor',
+    essayNote: 'This question will be graded manually by the teacher',
     submitExam: 'Submit Exam',
     submitting: 'Submitting...',
     confirmSubmit: 'Are you sure you want to submit the exam?',
@@ -112,7 +112,7 @@ const T = {
     failed: 'Failed',
     pending: 'Under Review',
     pendingMsg:
-      'Your exam contains essay questions that require manual grading by the instructor. Your final result will appear once grading is complete.',
+      'Your exam contains essay questions that require manual grading by the teacher. Your final result will appear once grading is complete.',
     autoScore: 'Auto-graded score',
     backToCourse: 'Back to Course',
     passingScore: 'Passing score',

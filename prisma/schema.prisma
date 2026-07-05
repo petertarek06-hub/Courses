@@ -23,12 +23,13 @@ model User {
   balance        Float    @default(0)
   createdAt      DateTime @default(now())
 
-  courses       Course[]         @relation("InstructorCourses")
-  enrollments   Enrollment[]     @relation("StudentEnrollments")
-  transactions  Transaction[]    @relation("StudentTransactions")
-  processedTx   Transaction[]    @relation("AdminTransactions")
-  examAttempts  ExamAttempt[]    @relation("StudentExamAttempts")
-  progress      LessonProgress[] @relation("StudentProgress")
+  courses          Course[]         @relation("TeacherCourses")
+  enrollments      Enrollment[]     @relation("StudentEnrollments")
+  transactions     Transaction[]    @relation("StudentTransactions")
+  topUpRequests    TopUpRequest[]   @relation("StudentTopUpRequests")
+  processedTopUps  TopUpRequest[]   @relation("AdminTopUpRequests")
+  examAttempts     ExamAttempt[]    @relation("StudentExamAttempts")
+  progress         LessonProgress[] @relation("StudentProgress")
 
   @@map("users")
 }
@@ -44,8 +45,8 @@ model Course {
   isVisible     Boolean  @default(true)
   createdAt     DateTime @default(now())
 
-  instructor    User   @relation("InstructorCourses", fields: [instructorId], references: [id], onDelete: Cascade)
-  instructorId  Int
+  teacher    User   @relation("TeacherCourses", fields: [teacherId], references: [id], onDelete: Cascade)
+  teacherId  Int
 
   lessons       Lesson[]
   enrollments   Enrollment[]
@@ -104,10 +105,11 @@ model Video {
 
 // ── Exams ──────────────────────────────────────────────────────
 model Exam {
-  id              Int      @id @default(autoincrement())
+  id              Int       @id @default(autoincrement())
   durationMinutes Int?
-  passingScore    Int      @default(50)
-  createdAt       DateTime @default(now())
+  passingScore    Int       @default(50)
+  scheduledAt     DateTime? // null = available immediately; future = locked until this time
+  createdAt       DateTime  @default(now())
 
   lesson   Lesson @relation(fields: [lessonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
   lessonId Int    @unique
@@ -122,7 +124,7 @@ model Exam {
 model QuestionBank {
   id            Int      @id @default(autoincrement())
   text          String   @db.NVarChar(500)
-  type          String   @db.VarChar(15)   
+  type          String   @db.VarChar(15)
   optionsJson   String   @db.NVarChar(1000)
   correctAnswer String   @db.NVarChar(2000)
   lessonTag     String   @db.NVarChar(200)
@@ -140,7 +142,7 @@ model QuestionBank {
 model ExamQuestion {
   id    Int @id @default(autoincrement())
   order Int @default(0)
-    mark  Int @default(1) 
+  mark  Int @default(1)
 
   exam   Exam @relation(fields: [examId], references: [id], onDelete: Cascade, onUpdate: NoAction)
   examId Int
@@ -174,7 +176,6 @@ model ExamAttempt {
 }
 
 // ── Attempt Answers ────────────────────────────────────────────
-// ── Attempt Answers ────────────────────────────────────────────
 model AttemptAnswer {
   id          Int      @id @default(autoincrement())
   givenAnswer String   @db.NVarChar(Max)
@@ -190,6 +191,7 @@ model AttemptAnswer {
 
   @@map("attempt_answers")
 }
+
 // ── Lesson Progress ────────────────────────────────────────────
 model LessonProgress {
   id          Int       @id @default(autoincrement())
@@ -206,24 +208,94 @@ model LessonProgress {
   @@map("lesson_progress")
 }
 
+// ── Center Settings (singleton row, id = 1) ──────────────────────
+model CenterSettings {
+  id                  Int      @id @default(autoincrement())
+  siteName            String   @default("EduCenter") @db.NVarChar(150)
+  siteDescription     String?  @db.NVarChar(500)
+  email               String?  @db.NVarChar(150)
+  phone               String?  @db.VarChar(20)
+  whatsappNumber      String?  @db.VarChar(20)
+  address             String?  @db.NVarChar(300)
+  facebookUrl         String?  @db.NVarChar(300)
+  instagramUrl        String?  @db.NVarChar(300)
+  youtubeUrl          String?  @db.NVarChar(300)
+  whatsappButtonLabel String?  @db.NVarChar(100)
+  copyrightText       String?  @db.NVarChar(200)
+  updatedAt           DateTime @updatedAt
+
+  @@map("center_settings")
+}
+
+// ── Top-Up Requests ────────────────────────────────────────────
+// The workflow/review side of a balance top-up. Lives entirely on its own:
+// created by a student, reviewed by an admin, and never represents money
+// that has actually moved yet. Approving one produces exactly one
+// Transaction row (see below); rejecting one produces none.
+
+
+model TopUpRequest {
+  id            Int       @id @default(autoincrement())
+  amount        Float
+  method        String    @db.VarChar(20)  // "cash" | "wallet" | "fawry"
+  status        String    @default("pending") @db.VarChar(20) // "pending" | "approved" | "rejected"
+  senderPhone   String?   @db.VarChar(20)   // required for "wallet"
+  proofImageUrl String?   @db.NVarChar(500) // required for "wallet"
+  notes         String?   @db.NVarChar(300)
+  createdAt     DateTime  @default(now())
+  processedAt   DateTime?
+
+  student   User @relation("StudentTopUpRequests", fields: [studentId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  studentId Int
+
+  processedBy   User? @relation("AdminTopUpRequests", fields: [processedById], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  processedById Int?
+
+  // Changed from `transaction Transaction?` to Transaction[]: Prisma
+  // requires @unique on the FK side for a true 1:1 relation, but we
+  // deliberately don't put a plain @unique on Transaction.topUpRequestId
+  // (SQL Server would then reject a second NULL from purchase/adjustment
+  // rows). So both sides of this relation are modeled as 1:many at the
+  // Prisma level; "at most one" is enforced for real by the filtered
+  // unique index on transactions.topUpRequestId (already applied to the
+  // DB) rather than by Prisma's type system. In practice this array will
+  // only ever contain zero or one element.
+  transactions Transaction[]
+
+  @@map("topup_requests")
+}
 // ── Transactions ───────────────────────────────────────────────
+// Pure, append-only ledger: a row exists here if and only if the student's
+// balance actually changed. No pending/rejected states, no unused columns
+// depending on row type — if it's here, it happened.
+//
+// topUpRequestId is intentionally NOT @unique at the Prisma level anymore.
+// SQL Server treats a plain unique constraint as allowing only ONE null
+// across the whole table — but every "purchase" and "adjustment" row
+// leaves this column null, so a second one would falsely collide with
+// the first. The real uniqueness ("at most one transaction per top-up
+// request, when one exists") is instead enforced by a filtered unique
+// index created directly in the migration SQL below.
 model Transaction {
   id        Int      @id @default(autoincrement())
   amount    Float
-  type      String   @db.VarChar(20)  // "add" | "deduct" | "payment"
-  method    String   @db.VarChar(20)  // "cash" | "fawry"
-  status    String   @default("completed") @db.VarChar(20)
+  type      String   @db.VarChar(20)  // "topup" | "purchase" | "adjustment"
+  method    String   @db.VarChar(20)  // "cash" | "wallet" | "fawry" | "balance" | "manual"
   notes     String?  @db.NVarChar(300)
   createdAt DateTime @default(now())
 
   student   User @relation("StudentTransactions", fields: [studentId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   studentId Int
 
-  processedBy   User? @relation("AdminTransactions", fields: [processedById], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  processedById Int?
-
+  // Set for "purchase" transactions only.
   course   Course? @relation(fields: [courseId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   courseId Int?
+
+  // Set for "topup" transactions only — traces back to the request that
+  // was approved to create this ledger entry. Enforced unique (when not
+  // null) via a filtered index in migration SQL, not @unique here.
+  topUpRequest   TopUpRequest? @relation(fields: [topUpRequestId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  topUpRequestId Int?
 
   @@map("transactions")
 }

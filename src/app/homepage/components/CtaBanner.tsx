@@ -32,7 +32,7 @@ export default function CtaBanner({ lang, user }: Props) {
     user?.role === 'admin'
       ? '/admin'
       : user?.role === 'teacher'
-        ? '/instructor-dashboard'
+        ? '/teacher-dashboard'
         : '/student-dashboard';
 
   return (

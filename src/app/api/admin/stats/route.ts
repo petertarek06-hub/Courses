@@ -10,12 +10,10 @@ export async function GET() {
 
   const [totalStudents, totalTeachers, totalCourses, revenueAgg, recentStudents] =
     await Promise.all([
-      // Count all students
       prisma.user.count({
         where: { role: 'student' },
       }),
 
-      // Count all teachers/instructors
       prisma.user.count({
         where: { role: 'teacher' },
       }),
@@ -23,10 +21,14 @@ export async function GET() {
       // Count all courses
       prisma.course.count(),
 
-      // Sum completed payment transactions
+      // Sum course-purchase transactions.
+      // No `status` filter needed anymore — Transaction is a pure ledger
+      // now, so every row in it already represents completed, money-moved
+      // activity by definition. Pending/rejected top-ups never make it in
+      // here at all (they live in TopUpRequest until approved).
       prisma.transaction.aggregate({
         _sum: { amount: true },
-        where: { type: 'payment', status: 'completed' },
+        where: { type: 'purchase' },
       }),
 
       // Last 10 registered users (any role) for the recent table

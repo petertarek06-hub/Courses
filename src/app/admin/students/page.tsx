@@ -26,7 +26,7 @@ interface Student {
   academicYear: string | null;
   isActive: boolean;
   balance: number;
-  avatarUrl: string | null; // ✅ added
+  avatarUrl: string | null;
   createdAt: string;
 }
 
@@ -73,6 +73,7 @@ const content = {
     fullName: 'الاسم الكامل',
     fullNamePlaceholder: 'أدخل الاسم الكامل',
     phonePlaceholder: '01XXXXXXXXX',
+    phoneInvalid: 'أدخل رقم هاتف مصري صحيح (01xxxxxxxxx)',
     emailLabel: 'البريد الإلكتروني (اختياري)',
     emailPlaceholder: 'example@email.com',
     academicYear: 'السنة الدراسية',
@@ -121,6 +122,7 @@ const content = {
     fullName: 'Full Name',
     fullNamePlaceholder: 'Enter full name',
     phonePlaceholder: '01XXXXXXXXX',
+    phoneInvalid: 'Enter a valid Egyptian phone number (01xxxxxxxxx)',
     emailLabel: 'Email (Optional)',
     emailPlaceholder: 'example@email.com',
     academicYear: 'Academic Year',
@@ -146,6 +148,8 @@ const content = {
   },
 };
 
+const EG_PHONE_REGEX = /^01[0-9]{9}$/;
+
 // ── Avatar cell helper ─────────────────────────────────────────
 function StudentAvatar({ src, name }: { src: string | null; name: string }) {
   const initials = name
@@ -157,12 +161,14 @@ function StudentAvatar({ src, name }: { src: string | null; name: string }) {
     .toUpperCase();
 
   return (
-    <div className="w-8 h-8 rounded-full overflow-hidden shrink-0 bg-primary/10 flex items-center justify-center border border-border">
+    <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full overflow-hidden shrink-0 bg-primary/10 flex items-center justify-center border border-border">
       {src ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img src={src} alt={name} className="w-full h-full object-cover" />
       ) : (
-        <span className="text-xs font-bold text-primary leading-none">{initials}</span>
+        <span className="text-[10px] sm:text-xs font-bold text-primary leading-none">
+          {initials}
+        </span>
       )}
     </div>
   );
@@ -188,6 +194,7 @@ export default function AdminStudentsPage() {
     password: '',
   });
   const [addLoading, setAddLoading] = useState(false);
+  const [addErrors, setAddErrors] = useState<{ phone?: string }>({});
 
   const [balanceStudent, setBalanceStudent] = useState<Student | null>(null);
   const [balanceAmount, setBalanceAmount] = useState('');
@@ -252,17 +259,26 @@ export default function AdminStudentsPage() {
   };
 
   const handleAdd = async () => {
-    if (!addForm.fullName || !addForm.phone || !addForm.password) return;
+    const phone = addForm.phone.trim();
+
+    if (!EG_PHONE_REGEX.test(phone)) {
+      setAddErrors({ phone: t.phoneInvalid });
+      return;
+    }
+    setAddErrors({});
+
+    if (!addForm.fullName || !phone || !addForm.password) return;
     setAddLoading(true);
     const res = await fetch('/api/admin/students', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(addForm),
+      body: JSON.stringify({ ...addForm, phone }),
     });
     if (res.ok) {
       toast.success(t.addedSuccess);
       setShowAdd(false);
       setAddForm({ fullName: '', phone: '', email: '', academicYear: '', password: '' });
+      setAddErrors({});
       fetchStudents();
     } else if (res.status === 409) {
       toast.error(t.phoneExists);
@@ -293,36 +309,45 @@ export default function AdminStudentsPage() {
   return (
     <>
       {/* Header */}
-      <div className="flex items-center justify-between mb-6 gap-4 flex-wrap">
-        <h1 className="text-2xl font-extrabold text-foreground" style={{ fontFamily: font }}>
+      <div className="flex items-center justify-between mb-4 sm:mb-6 gap-3 flex-wrap">
+        <h1
+          className="text-xl sm:text-2xl font-extrabold text-foreground"
+          style={{ fontFamily: font }}
+        >
           {t.title}
         </h1>
         <button
           onClick={() => setShowAdd(true)}
-          className="flex items-center gap-2 px-4 py-2.5 rounded-xl gradient-primary text-white text-sm font-bold shadow-md hover:opacity-90 active:scale-95 transition-all"
+          className="flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl gradient-primary text-white text-xs sm:text-sm font-bold shadow-md hover:opacity-90 active:scale-95 transition-all"
           style={{ fontFamily: font }}
         >
-          <UserPlus size={16} />
+          <UserPlus size={14} className="sm:hidden" />
+          <UserPlus size={16} className="hidden sm:block" />
           {t.addStudent}
         </button>
       </div>
 
       {/* Search */}
-      <div className="relative mb-4">
+      <div className="relative mb-3 sm:mb-4">
+        <Search
+          size={14}
+          className="absolute top-1/2 -translate-y-1/2 text-muted-foreground sm:hidden"
+          style={{ [isRtl ? 'right' : 'left']: '12px' }}
+        />
         <Search
           size={16}
-          className="absolute top-1/2 -translate-y-1/2 text-muted-foreground"
+          className="absolute top-1/2 -translate-y-1/2 text-muted-foreground hidden sm:block"
           style={{ [isRtl ? 'right' : 'left']: '14px' }}
         />
         <input
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder={t.search}
-          className="w-full max-w-sm py-2.5 rounded-xl border border-border bg-card text-sm text-foreground outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary transition-all"
+          className="w-full max-w-sm py-2 sm:py-2.5 rounded-xl border border-border bg-card text-xs sm:text-sm text-foreground outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary transition-all"
           style={{
             fontFamily: font,
-            [isRtl ? 'paddingRight' : 'paddingLeft']: '40px',
-            [isRtl ? 'paddingLeft' : 'paddingRight']: '16px',
+            [isRtl ? 'paddingRight' : 'paddingLeft']: '36px',
+            [isRtl ? 'paddingLeft' : 'paddingRight']: '14px',
           }}
         />
       </div>
@@ -330,14 +355,14 @@ export default function AdminStudentsPage() {
       {/* Table */}
       <div className="bg-card rounded-2xl border border-border card-shadow overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full text-sm border-collapse">
+          <table className="w-full text-xs sm:text-sm border-collapse">
             <thead className="bg-muted">
               <tr>
                 {[t.name, t.phone, t.grade, t.balance, t.status, t.joinedAt, t.actions].map(
                   (col, i, arr) => (
                     <th
                       key={col}
-                      className={`px-4 py-3 text-center border-b border-border text-xs font-bold text-muted-foreground uppercase tracking-wide whitespace-nowrap ${
+                      className={`px-2 sm:px-4 py-2 sm:py-3 text-center border-b border-border text-[10px] sm:text-xs font-bold text-muted-foreground uppercase tracking-wide whitespace-nowrap ${
                         i < arr.length - 1 ? getBorderDirection() : ''
                       }`}
                       style={{ fontFamily: font }}
@@ -351,7 +376,7 @@ export default function AdminStudentsPage() {
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={7} className="py-12 text-center">
+                  <td colSpan={7} className="py-10 sm:py-12 text-center">
                     <Loader2 size={24} className="animate-spin text-primary mx-auto" />
                   </td>
                 </tr>
@@ -359,7 +384,7 @@ export default function AdminStudentsPage() {
                 <tr>
                   <td
                     colSpan={7}
-                    className="py-10 text-center text-red-500 text-sm"
+                    className="py-8 sm:py-10 text-center text-red-500 text-xs sm:text-sm"
                     style={{ fontFamily: font }}
                   >
                     {t.errorLoading}
@@ -369,7 +394,7 @@ export default function AdminStudentsPage() {
                 <tr>
                   <td
                     colSpan={7}
-                    className="py-10 text-center text-muted-foreground"
+                    className="py-8 sm:py-10 text-center text-muted-foreground"
                     style={{ fontFamily: font }}
                   >
                     {t.noData}
@@ -381,11 +406,11 @@ export default function AdminStudentsPage() {
                     key={s.id}
                     className="odd:bg-background even:bg-muted/10 hover:bg-muted/30 transition-colors"
                   >
-                    {/* ── Name + Avatar ── */}
+                    {/* Name + Avatar */}
                     <td
-                      className={`px-4 py-3 text-center align-middle border-b border-border ${getBorderDirection()}`}
+                      className={`px-2 sm:px-4 py-2 sm:py-3 text-center align-middle border-b border-border ${getBorderDirection()}`}
                     >
-                      <div className="flex items-center justify-center gap-2.5">
+                      <div className="flex items-center justify-center gap-1.5 sm:gap-2.5">
                         <StudentAvatar src={s.avatarUrl} name={s.fullName} />
                         <span
                           className="font-semibold text-foreground whitespace-nowrap"
@@ -398,7 +423,7 @@ export default function AdminStudentsPage() {
 
                     {/* Phone */}
                     <td
-                      className={`px-4 py-3 text-center align-middle border-b border-border ${getBorderDirection()} text-muted-foreground`}
+                      className={`px-2 sm:px-4 py-2 sm:py-3 text-center align-middle border-b border-border ${getBorderDirection()} text-muted-foreground`}
                       dir="ltr"
                     >
                       {s.phone}
@@ -406,7 +431,7 @@ export default function AdminStudentsPage() {
 
                     {/* Grade */}
                     <td
-                      className={`px-4 py-3 text-center align-middle border-b border-border ${getBorderDirection()} text-muted-foreground`}
+                      className={`px-2 sm:px-4 py-2 sm:py-3 text-center align-middle border-b border-border ${getBorderDirection()} text-muted-foreground`}
                       style={{ fontFamily: font }}
                     >
                       {gradeLabel(s.academicYear)}
@@ -414,7 +439,7 @@ export default function AdminStudentsPage() {
 
                     {/* Balance */}
                     <td
-                      className={`px-4 py-3 text-center align-middle border-b border-border ${getBorderDirection()} font-semibold text-foreground`}
+                      className={`px-2 sm:px-4 py-2 sm:py-3 text-center align-middle border-b border-border ${getBorderDirection()} font-semibold text-foreground`}
                       dir="ltr"
                     >
                       {s.balance ?? 0} {t.egp}
@@ -422,10 +447,10 @@ export default function AdminStudentsPage() {
 
                     {/* Status */}
                     <td
-                      className={`px-4 py-3 text-center align-middle border-b border-border ${getBorderDirection()}`}
+                      className={`px-2 sm:px-4 py-2 sm:py-3 text-center align-middle border-b border-border ${getBorderDirection()}`}
                     >
                       <span
-                        className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold ${
+                        className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] sm:text-xs font-bold ${
                           s.isActive
                             ? 'bg-green-500/10 text-green-600'
                             : 'bg-red-500/10 text-red-500'
@@ -438,42 +463,54 @@ export default function AdminStudentsPage() {
 
                     {/* Joined */}
                     <td
-                      className={`px-4 py-3 text-center align-middle border-b border-border ${getBorderDirection()} text-muted-foreground`}
+                      className={`px-2 sm:px-4 py-2 sm:py-3 text-center align-middle border-b border-border ${getBorderDirection()} text-muted-foreground text-[10px] sm:text-xs`}
                       dir="ltr"
                     >
                       {new Date(s.createdAt).toLocaleDateString('en-EG')}
                     </td>
 
                     {/* Actions */}
-                    <td className="px-4 py-3 text-center align-middle border-b border-border">
-                      <div className="flex items-center justify-center gap-2">
+                    <td className="px-2 sm:px-4 py-2 sm:py-3 text-center align-middle border-b border-border">
+                      <div className="flex items-center justify-center gap-1 sm:gap-2">
                         <button
                           onClick={() => {
                             setBalanceStudent(s);
                             setBalanceAmount('');
                           }}
                           title={t.manageBalance}
-                          className="p-2 rounded-lg text-muted-foreground hover:bg-primary/10 hover:text-primary transition-colors"
+                          className="p-1.5 sm:p-2 rounded-lg text-muted-foreground hover:bg-primary/10 hover:text-primary transition-colors"
                         >
-                          <Wallet size={15} />
+                          <Wallet size={14} className="sm:hidden" />
+                          <Wallet size={15} className="hidden sm:block" />
                         </button>
                         <button
                           onClick={() => handleToggleStatus(s)}
                           title={s.isActive ? t.suspend : t.activate}
-                          className={`p-2 rounded-lg transition-colors ${
+                          className={`p-1.5 sm:p-2 rounded-lg transition-colors ${
                             s.isActive
                               ? 'text-muted-foreground hover:bg-orange-50 hover:text-orange-500'
                               : 'text-muted-foreground hover:bg-green-50 hover:text-green-500'
                           }`}
                         >
-                          {s.isActive ? <Ban size={15} /> : <CheckCircle size={15} />}
+                          {s.isActive ? (
+                            <>
+                              <Ban size={14} className="sm:hidden" />
+                              <Ban size={15} className="hidden sm:block" />
+                            </>
+                          ) : (
+                            <>
+                              <CheckCircle size={14} className="sm:hidden" />
+                              <CheckCircle size={15} className="hidden sm:block" />
+                            </>
+                          )}
                         </button>
                         <button
                           onClick={() => setDeleteStudent(s)}
                           title={t.delete}
-                          className="p-2 rounded-lg text-muted-foreground hover:bg-red-50 hover:text-red-500 transition-colors"
+                          className="p-1.5 sm:p-2 rounded-lg text-muted-foreground hover:bg-red-50 hover:text-red-500 transition-colors"
                         >
-                          <Trash2 size={15} />
+                          <Trash2 size={14} className="sm:hidden" />
+                          <Trash2 size={15} className="hidden sm:block" />
                         </button>
                       </div>
                     </td>
@@ -493,7 +530,7 @@ export default function AdminStudentsPage() {
           font={font}
           isRtl={isRtl}
         >
-          <div className="flex flex-col gap-3">
+          <div className="flex flex-col gap-2.5 sm:gap-3">
             <Field label={t.fullName} font={font}>
               <input
                 value={addForm.fullName}
@@ -506,11 +543,19 @@ export default function AdminStudentsPage() {
             <Field label={t.phone} font={font}>
               <input
                 value={addForm.phone}
-                onChange={(e) => setAddForm({ ...addForm, phone: e.target.value })}
+                onChange={(e) => {
+                  setAddForm({ ...addForm, phone: e.target.value });
+                  if (addErrors.phone) setAddErrors({});
+                }}
                 placeholder={t.phonePlaceholder}
                 dir="ltr"
-                className="input-field"
+                className={`input-field ${addErrors.phone ? 'border-red-400 focus:ring-red-200' : ''}`}
               />
+              {addErrors.phone && (
+                <p className="text-red-500 text-xs mt-0.5" style={{ fontFamily: font }}>
+                  {addErrors.phone}
+                </p>
+              )}
             </Field>
             <Field label={t.emailLabel} font={font}>
               <input
@@ -525,7 +570,7 @@ export default function AdminStudentsPage() {
               <select
                 value={addForm.academicYear}
                 onChange={(e) => setAddForm({ ...addForm, academicYear: e.target.value })}
-                className="w-full px-4 py-2.5 rounded-xl border border-border bg-card text-sm text-foreground outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary transition-all"
+                className="w-full px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl border border-border bg-card text-xs sm:text-sm text-foreground outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary transition-all"
                 style={{ fontFamily: 'var(--font-cairo)' }}
               >
                 <option value="">{lang === 'ar' ? 'اختر الصف الدراسي' : 'Select grade'}</option>
@@ -584,10 +629,10 @@ export default function AdminStudentsPage() {
               />
             </Field>
           </div>
-          <div className="flex items-center justify-end gap-2 mt-5">
+          <div className="flex items-center justify-end gap-2 mt-4 sm:mt-5">
             <button
               onClick={() => setShowAdd(false)}
-              className="px-4 py-2 rounded-xl border border-border text-sm font-semibold text-muted-foreground hover:bg-muted transition-all"
+              className="px-3 sm:px-4 py-1.5 sm:py-2 rounded-xl border border-border text-xs sm:text-sm font-semibold text-muted-foreground hover:bg-muted transition-all"
               style={{ fontFamily: font }}
             >
               {t.cancel}
@@ -595,10 +640,10 @@ export default function AdminStudentsPage() {
             <button
               onClick={handleAdd}
               disabled={addLoading}
-              className="px-5 py-2 rounded-xl gradient-primary text-white text-sm font-bold shadow hover:opacity-90 active:scale-95 transition-all disabled:opacity-60"
+              className="px-4 sm:px-5 py-1.5 sm:py-2 rounded-xl gradient-primary text-white text-xs sm:text-sm font-bold shadow hover:opacity-90 active:scale-95 transition-all disabled:opacity-60"
               style={{ fontFamily: font }}
             >
-              {addLoading ? <Loader2 size={16} className="animate-spin" /> : t.save}
+              {addLoading ? <Loader2 size={14} className="animate-spin" /> : t.save}
             </button>
           </div>
         </Modal>
@@ -612,7 +657,10 @@ export default function AdminStudentsPage() {
           font={font}
           isRtl={isRtl}
         >
-          <p className="text-sm text-muted-foreground mb-4" style={{ fontFamily: font }}>
+          <p
+            className="text-xs sm:text-sm text-muted-foreground mb-3 sm:mb-4"
+            style={{ fontFamily: font }}
+          >
             {t.currentBalance}:{' '}
             <span className="font-bold text-foreground">
               {balanceStudent.balance ?? 0} {t.egp}
@@ -629,23 +677,23 @@ export default function AdminStudentsPage() {
               className="input-field"
             />
           </Field>
-          <div className="flex items-center gap-2 mt-5">
+          <div className="flex items-center gap-2 mt-4 sm:mt-5">
             <button
               onClick={() => handleBalance('addBalance')}
               disabled={balanceLoading || !balanceAmount}
-              className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-green-500 hover:bg-green-600 text-white text-sm font-bold transition-all disabled:opacity-60"
+              className="flex-1 flex items-center justify-center gap-1.5 py-2 sm:py-2.5 rounded-xl bg-green-500 hover:bg-green-600 text-white text-xs sm:text-sm font-bold transition-all disabled:opacity-60"
               style={{ fontFamily: font }}
             >
-              <Plus size={15} />
+              <Plus size={14} />
               {t.addBalance}
             </button>
             <button
               onClick={() => handleBalance('deductBalance')}
               disabled={balanceLoading || !balanceAmount}
-              className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-red-500 hover:bg-red-600 text-white text-sm font-bold transition-all disabled:opacity-60"
+              className="flex-1 flex items-center justify-center gap-1.5 py-2 sm:py-2.5 rounded-xl bg-red-500 hover:bg-red-600 text-white text-xs sm:text-sm font-bold transition-all disabled:opacity-60"
               style={{ fontFamily: font }}
             >
-              <Minus size={15} />
+              <Minus size={14} />
               {t.deductBalance}
             </button>
           </div>
@@ -656,7 +704,7 @@ export default function AdminStudentsPage() {
       {deleteStudent && (
         <Modal onClose={() => setDeleteStudent(null)} title={t.delete} font={font} isRtl={isRtl}>
           <p
-            className="text-sm text-muted-foreground mb-6 leading-relaxed"
+            className="text-xs sm:text-sm text-muted-foreground mb-4 sm:mb-6 leading-relaxed"
             style={{ fontFamily: font }}
           >
             {t.confirmDelete}{' '}
@@ -665,7 +713,7 @@ export default function AdminStudentsPage() {
           <div className="flex items-center justify-end gap-2">
             <button
               onClick={() => setDeleteStudent(null)}
-              className="px-4 py-2 rounded-xl border border-border text-sm font-semibold text-muted-foreground hover:bg-muted transition-all"
+              className="px-3 sm:px-4 py-1.5 sm:py-2 rounded-xl border border-border text-xs sm:text-sm font-semibold text-muted-foreground hover:bg-muted transition-all"
               style={{ fontFamily: font }}
             >
               {t.cancel}
@@ -673,10 +721,10 @@ export default function AdminStudentsPage() {
             <button
               onClick={handleDelete}
               disabled={deleteLoading}
-              className="px-5 py-2 rounded-xl bg-red-500 hover:bg-red-600 text-white text-sm font-bold transition-all disabled:opacity-60"
+              className="px-4 sm:px-5 py-1.5 sm:py-2 rounded-xl bg-red-500 hover:bg-red-600 text-white text-xs sm:text-sm font-bold transition-all disabled:opacity-60"
               style={{ fontFamily: font }}
             >
-              {deleteLoading ? <Loader2 size={16} className="animate-spin" /> : t.confirmDeleteBtn}
+              {deleteLoading ? <Loader2 size={14} className="animate-spin" /> : t.confirmDeleteBtn}
             </button>
           </div>
         </Modal>
@@ -700,20 +748,26 @@ function Modal({
   isRtl: boolean;
 }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm animate-fade-in">
-      <div className="bg-card rounded-2xl border border-border card-shadow w-full max-w-md p-6 relative">
-        <div className="flex items-center justify-between mb-5">
-          <h2 className="text-base font-bold text-foreground" style={{ fontFamily: font }}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/40 backdrop-blur-sm animate-fade-in">
+      <div className="bg-card rounded-2xl border border-border card-shadow w-full max-w-md relative flex flex-col max-h-[90vh]">
+        {/* Sticky header */}
+        <div className="flex items-center justify-between px-4 sm:px-6 pt-4 sm:pt-5 pb-3 sm:pb-4 border-b border-border shrink-0">
+          <h2
+            className="text-sm sm:text-base font-bold text-foreground"
+            style={{ fontFamily: font }}
+          >
             {title}
           </h2>
           <button
             onClick={onClose}
             className="p-1.5 rounded-lg text-muted-foreground hover:bg-muted transition-colors"
           >
-            <X size={18} />
+            <X size={16} className="sm:hidden" />
+            <X size={18} className="hidden sm:block" />
           </button>
         </div>
-        {children}
+        {/* Scrollable body */}
+        <div className="overflow-y-auto px-4 sm:px-6 py-4 sm:py-5 flex-1">{children}</div>
       </div>
     </div>
   );
@@ -730,8 +784,11 @@ function Field({
   children: React.ReactNode;
 }) {
   return (
-    <div className="flex flex-col gap-1.5">
-      <label className="text-sm font-semibold text-foreground" style={{ fontFamily: font }}>
+    <div className="flex flex-col gap-1 sm:gap-1.5">
+      <label
+        className="text-xs sm:text-sm font-semibold text-foreground"
+        style={{ fontFamily: font }}
+      >
         {label}
       </label>
       {children}

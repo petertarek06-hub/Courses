@@ -69,9 +69,8 @@ export default function Header({ lang, onToggleLang, currentPath = '/' }: Header
         {lang === 'ar' ? 'الإعدادات' : 'Settings'}
       </Link>
     ) : user?.role === 'teacher' ? (
-      // Instructor → their course list
       <Link
-        href="/instructor-dashboard"
+        href="/teacher-dashboard"
         className="hidden md:flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border text-sm font-semibold text-muted-foreground hover:bg-muted hover:text-foreground transition-all duration-150"
         style={{ fontFamily: isRtl ? 'var(--font-cairo)' : undefined }}
       >
@@ -92,9 +91,9 @@ export default function Header({ lang, onToggleLang, currentPath = '/' }: Header
         <Settings size={15} />
         {lang === 'ar' ? 'الإعدادات' : 'Settings'}
       </Link>
-    ) : user?.role === 'instructor' ? (
+    ) : user?.role === 'teacher' ? (
       <Link
-        href="/instructor-dashboard"
+        href="/teacher-dashboard"
         onClick={() => setMobileOpen(false)}
         className="px-4 py-3 rounded-lg border border-border text-sm font-semibold text-muted-foreground hover:bg-muted transition-all duration-150 flex items-center gap-2"
         style={{ fontFamily: isRtl ? 'var(--font-cairo)' : undefined }}
@@ -170,12 +169,12 @@ export default function Header({ lang, onToggleLang, currentPath = '/' }: Header
                         {lang === 'ar' ? 'أدمن' : 'Admin'}
                       </span>
                     )}
-                    {user.role === 'instructor' && (
+                    {user.role === 'teacher' && (
                       <span
                         className="text-xs bg-secondary text-white px-1.5 py-0.5 rounded-md font-bold"
                         style={{ fontFamily: isRtl ? 'var(--font-cairo)' : undefined }}
                       >
-                        {lang === 'ar' ? 'مدرس' : 'Instructor'}
+                        {lang === 'ar' ? 'مدرس' : 'Teacher'}
                       </span>
                     )}
                   </div>
@@ -198,8 +197,6 @@ export default function Header({ lang, onToggleLang, currentPath = '/' }: Header
                   {lang === 'ar' ? 'ابدأ الآن' : 'Get Started'}
                 </Link>
               ))}
-
-            {/* Admin Settings / Instructor My Courses — desktop */}
             {!loadingUser && dashboardBtn}
 
             {/* Mobile hamburger */}
@@ -251,16 +248,15 @@ export default function Header({ lang, onToggleLang, currentPath = '/' }: Header
                       {lang === 'ar' ? 'أدمن' : 'Admin'}
                     </span>
                   )}
-                  {user.role === 'instructor' && (
+                  {user.role === 'teacher' && (
                     <span
                       className="text-xs bg-secondary text-white px-1.5 py-0.5 rounded-md font-bold"
                       style={{ fontFamily: isRtl ? 'var(--font-cairo)' : undefined }}
                     >
-                      {lang === 'ar' ? 'مدرس' : 'Instructor'}
+                      {lang === 'ar' ? 'مدرس' : 'Teacher'}
                     </span>
                   )}
                 </div>
-                {/* Admin Settings / Instructor My Courses — mobile */}
                 {mobileDashboardBtn}
                 <button
                   onClick={handleLogout}

@@ -10,7 +10,7 @@ export async function GET() {
   const courses = await prisma.course.findMany({
     orderBy: { createdAt: 'desc' },
     include: {
-      instructor: {
+      teacher: {
         select: { id: true, fullName: true, phone: true },
       },
     },
@@ -25,15 +25,15 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const body = await req.json();
-  const { name, description, subject, academicYear, price, instructorId } = body;
+  const { name, description, subject, academicYear, price, teacherId } = body;
 
-  if (!name || !subject || !academicYear || !instructorId)
+  if (!name || !subject || !academicYear || !teacherId)
     return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
 
-  const instructor = await prisma.user.findFirst({
-    where: { id: Number(instructorId), role: 'teacher' },
+  const teacher = await prisma.user.findFirst({
+    where: { id: Number(teacherId), role: 'teacher' },
   });
-  if (!instructor) return NextResponse.json({ error: 'Instructor not found' }, { status: 404 });
+  if (!teacher) return NextResponse.json({ error: 'Teacher not found' }, { status: 404 });
 
   const course = await prisma.course.create({
     data: {
@@ -42,10 +42,10 @@ export async function POST(req: NextRequest) {
       subject,
       academicYear,
       price: Number(price) || 0,
-      instructorId: Number(instructorId),
+      teacherId: Number(teacherId),
     },
     include: {
-      instructor: { select: { id: true, fullName: true, phone: true } },
+      teacher: { select: { id: true, fullName: true, phone: true } },
     },
   });
 
@@ -82,7 +82,7 @@ export async function PATCH(req: NextRequest) {
         subject,
         academicYear: fields.academicYear,
         price: Number(fields.price) || 0,
-        instructorId: Number(fields.instructorId),
+        teacherId: Number(fields.teacherId),
       },
     });
     return NextResponse.json({ success: true });

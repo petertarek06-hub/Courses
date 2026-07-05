@@ -1,14 +1,44 @@
 //src/components/Footer.tsx
 'use client';
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import AppLogo from '@/components/ui/AppLogo';
 import { Phone, Mail, MapPin } from 'lucide-react';
-import { Facebook, Youtube, Instagram } from 'react-feather';
+import { Facebook, Youtube, Instagram } from '@/components/ui/BrandIcons';
 
 interface FooterProps {
   lang: 'ar' | 'en';
 }
+
+interface CenterInfo {
+  siteName: string;
+  siteDescription: string | null;
+  email: string | null;
+  phone: string | null;
+  whatsappNumber: string | null;
+  address: string | null;
+  facebookUrl: string | null;
+  instagramUrl: string | null;
+  youtubeUrl: string | null;
+  whatsappButtonLabel: string | null;
+  copyrightText: string | null;
+}
+
+// Fallback values shown until /api/settings resolves (and if a field was
+// never set by the admin), so the footer never renders empty.
+const DEFAULT_CENTER_INFO: CenterInfo = {
+  siteName: 'EduCenter',
+  siteDescription: null,
+  email: 'info@educenter.eg',
+  phone: '01234567890',
+  whatsappNumber: '01234567890',
+  address: null,
+  facebookUrl: null,
+  instagramUrl: null,
+  youtubeUrl: null,
+  whatsappButtonLabel: null,
+  copyrightText: null,
+};
 
 // WhatsApp icon SVG
 function WhatsAppIcon({ size = 20 }: { size?: number }) {
@@ -30,10 +60,9 @@ const footerContent = {
       { label: 'تسجيل الدخول', href: '/sign-up-login-screen' },
     ],
     contact: 'تواصل معنا',
-    phone: '01234567890',
-    email: 'info@educenter.eg',
-    address: 'القاهرة، مصر',
+    addressFallback: 'القاهرة، مصر',
     whatsapp: 'واتساب لويدا علي',
+    brandName: 'إيدو سنتر',
     rights: '© 2026 إيدو سنتر. جميع الحقوق محفوظة.',
     followUs: 'تابعنا',
   },
@@ -47,10 +76,9 @@ const footerContent = {
       { label: 'Sign In', href: '/sign-up-login-screen' },
     ],
     contact: 'Contact Us',
-    phone: '01234567890',
-    email: 'info@educenter.eg',
-    address: 'Cairo, Egypt',
+    addressFallback: 'Cairo, Egypt',
     whatsapp: 'WhatsApp Loyda Ali',
+    brandName: 'EduCenter',
     rights: '© 2026 EduCenter. All rights reserved.',
     followUs: 'Follow Us',
   },
@@ -60,6 +88,21 @@ export default function Footer({ lang }: FooterProps) {
   const t = footerContent[lang];
   const isRtl = lang === 'ar';
 
+  const [center, setCenter] = useState<CenterInfo>(DEFAULT_CENTER_INFO);
+
+  useEffect(() => {
+    fetch('/api/settings')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (data) setCenter((prev) => ({ ...prev, ...data }));
+      })
+      .catch(() => {
+        // keep the static defaults if the request fails
+      });
+  }, []);
+
+  const whatsappNumber = center.whatsappNumber ?? DEFAULT_CENTER_INFO.whatsappNumber;
+  const whatsappHref = whatsappNumber ? `https://wa.me/2${whatsappNumber}` : '#';
   return (
     <footer
       className="bg-foreground text-white mt-auto"
@@ -72,11 +115,11 @@ export default function Footer({ lang }: FooterProps) {
           <div>
             <div className="flex items-center gap-2 mb-4">
               <AppLogo size={36} />
-              <span className="font-bold text-lg text-white">
-                {lang === 'ar' ? 'إيدو سنتر' : 'EduCenter'}
-              </span>
+              <span className="font-bold text-lg text-white">{center.siteName || t.brandName}</span>
             </div>
-            <p className="text-white/70 text-sm leading-relaxed">{t.description}</p>
+            <p className="text-white/70 text-sm leading-relaxed">
+              {center.siteDescription || t.description}
+            </p>
           </div>
 
           {/* Quick links */}
@@ -100,28 +143,34 @@ export default function Footer({ lang }: FooterProps) {
           <div>
             <h4 className="font-bold text-base mb-4 text-white">{t.contact}</h4>
             <ul className="flex flex-col gap-3">
-              <li className="flex items-center gap-2 text-sm text-white/70">
-                <Phone size={15} className="flex-shrink-0 text-secondary" />
-                <span dir="ltr">{t.phone}</span>
-              </li>
-              <li className="flex items-center gap-2 text-sm text-white/70">
-                <Mail size={15} className="flex-shrink-0 text-secondary" />
-                <span>{t.email}</span>
-              </li>
-              <li className="flex items-center gap-2 text-sm text-white/70">
-                <MapPin size={15} className="flex-shrink-0 text-secondary" />
-                <span>{t.address}</span>
-              </li>
-              {/* WhatsApp Loyda Ali */}
+              {(center.phone ?? DEFAULT_CENTER_INFO.phone) && (
+                <li className="flex items-center gap-2 text-sm text-white/70">
+                  <Phone size={15} className="flex-shrink-0 text-secondary" />
+                  <span dir="ltr">{center.phone ?? DEFAULT_CENTER_INFO.phone}</span>
+                </li>
+              )}
+              {(center.email ?? DEFAULT_CENTER_INFO.email) && (
+                <li className="flex items-center gap-2 text-sm text-white/70">
+                  <Mail size={15} className="flex-shrink-0 text-secondary" />
+                  <span>{center.email ?? DEFAULT_CENTER_INFO.email}</span>
+                </li>
+              )}
+              {(center.address ?? t.addressFallback) && (
+                <li className="flex items-center gap-2 text-sm text-white/70">
+                  <MapPin size={15} className="flex-shrink-0 text-secondary" />
+                  <span>{center.address ?? t.addressFallback}</span>
+                </li>
+              )}
+              {/* WhatsApp */}
               <li>
                 <a
-                  href="https://wa.me/201234567890"
+                  href={whatsappHref}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-whatsapp hover:bg-green-500 text-white text-sm font-semibold transition-all duration-150 mt-1"
                 >
                   <WhatsAppIcon size={16} />
-                  {t.whatsapp}
+                  {center.whatsappButtonLabel || t.whatsapp}
                 </a>
               </li>
             </ul>
@@ -130,32 +179,38 @@ export default function Footer({ lang }: FooterProps) {
 
         {/* Social + copyright */}
         <div className="border-t border-white/10 mt-10 pt-6 flex flex-col sm:flex-row items-center justify-between gap-4">
-          <p className="text-white/50 text-sm">{t.rights}</p>
+          <p className="text-white/50 text-sm">{center.copyrightText || t.rights}</p>
           <div className="flex items-center gap-3">
             <span className="text-white/50 text-sm">{t.followUs}:</span>
             <a
-              href="#"
+              href={center.facebookUrl || '#'}
+              target={center.facebookUrl ? '_blank' : undefined}
+              rel="noopener noreferrer"
               className="w-8 h-8 rounded-full bg-white/10 hover:bg-primary flex items-center justify-center transition-colors duration-150"
               aria-label="Facebook"
             >
               <Facebook size={15} />
             </a>
             <a
-              href="#"
+              href={center.youtubeUrl || '#'}
+              target={center.youtubeUrl ? '_blank' : undefined}
+              rel="noopener noreferrer"
               className="w-8 h-8 rounded-full bg-white/10 hover:bg-red-500 flex items-center justify-center transition-colors duration-150"
               aria-label="YouTube"
             >
               <Youtube size={15} />
             </a>
             <a
-              href="#"
+              href={center.instagramUrl || '#'}
+              target={center.instagramUrl ? '_blank' : undefined}
+              rel="noopener noreferrer"
               className="w-8 h-8 rounded-full bg-white/10 hover:bg-pink-500 flex items-center justify-center transition-colors duration-150"
               aria-label="Instagram"
             >
               <Instagram size={15} />
             </a>
             <a
-              href="https://wa.me/201234567890"
+              href={whatsappHref}
               target="_blank"
               rel="noopener noreferrer"
               className="w-8 h-8 rounded-full bg-white/10 hover:bg-whatsapp flex items-center justify-center transition-colors duration-150"

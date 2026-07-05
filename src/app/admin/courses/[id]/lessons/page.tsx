@@ -26,6 +26,9 @@ import {
   Check,
   HelpCircle,
   FileText,
+  CalendarClock,
+  CalendarCheck2,
+  CalendarX2,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAdminLang } from '../../../Adminshell';
@@ -46,6 +49,7 @@ interface ExamRecord {
   id: number;
   durationMinutes: number | null;
   passingScore: number;
+  scheduledAt: string | null; // ISO string from API
   examQuestions: ExamQuestion[];
 }
 interface Lesson {
@@ -113,6 +117,17 @@ const T = {
     examNamePlaceholder: 'مثال: امتحان الفصل الأول',
     durationMinutes: 'مدة الامتحان (دقيقة) — اختياري',
     passingScore: 'درجة النجاح (%)',
+    // ── Scheduling ──
+    scheduleLabel: 'موعد إتاحة الامتحان',
+    scheduleHint:
+      'اتركه فارغًا ليكون الامتحان متاحًا فورًا. إذا حُدِّد موعد، لن يرى الطلاب الامتحان قبله.',
+    scheduleNow: 'متاح فورًا',
+    scheduleLater: 'جدولة في وقت محدد',
+    scheduledFor: 'مجدول في',
+    schedulePast: 'الموعد مضى — الامتحان متاح الآن',
+    scheduleFuture: 'مجدول للمستقبل',
+    clearSchedule: 'إلغاء الجدولة',
+    // ──
     manageQuestions: 'إدارة أسئلة الامتحان',
     addFromBank: 'إضافة من البنك',
     examHasQuestions: 'أسئلة الامتحان',
@@ -187,6 +202,17 @@ const T = {
     examNamePlaceholder: 'e.g. First Term Exam',
     durationMinutes: 'Duration (minutes) — optional',
     passingScore: 'Passing score (%)',
+    // ── Scheduling ──
+    scheduleLabel: 'Exam availability',
+    scheduleHint:
+      'Leave unscheduled to make it available immediately. When a date is set, students cannot see the exam before that time.',
+    scheduleNow: 'Available immediately',
+    scheduleLater: 'Schedule for a specific time',
+    scheduledFor: 'Scheduled for',
+    schedulePast: 'Time has passed — exam is now live',
+    scheduleFuture: 'Scheduled (upcoming)',
+    clearSchedule: 'Clear schedule',
+    // ──
     manageQuestions: 'Manage exam questions',
     addFromBank: 'Add from bank',
     examHasQuestions: 'Exam questions',
@@ -238,6 +264,41 @@ function parseOptions(json: string): string[] {
   }
 }
 
+/**
+ * Converts a JS Date → local datetime-local input value string
+ * e.g. "2025-07-04T08:00"
+ */
+function toDatetimeLocal(date: Date): string {
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return (
+    `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}` +
+    `T${pad(date.getHours())}:${pad(date.getMinutes())}`
+  );
+}
+
+/**
+ * Formats a stored ISO scheduledAt for display.
+ * Returns null if scheduledAt is null/undefined.
+ */
+function formatScheduledAt(iso: string | null | undefined, lang: 'ar' | 'en'): string | null {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return null;
+  return d.toLocaleString(lang === 'ar' ? 'ar-EG' : 'en-GB', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
+/** Returns true if the exam is currently available (no schedule, or schedule is in the past). */
+function isExamLive(scheduledAt: string | null | undefined): boolean {
+  if (!scheduledAt) return true;
+  return new Date(scheduledAt) <= new Date();
+}
+
 // ─── Reusable UI ──────────────────────────────────────────────
 function Modal({
   children,
@@ -253,22 +314,26 @@ function Modal({
   wide?: boolean;
 }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/50 backdrop-blur-sm">
       <div
         className={`bg-card rounded-2xl border border-border shadow-2xl w-full ${wide ? 'max-w-2xl' : 'max-w-md'} max-h-[90vh] flex flex-col`}
       >
-        <div className="flex items-center justify-between px-6 py-4 border-b border-border flex-shrink-0">
-          <h2 className="text-base font-bold text-foreground" style={{ fontFamily: font }}>
+        <div className="flex items-center justify-between px-4 sm:px-6 py-3 sm:py-4 border-b border-border flex-shrink-0">
+          <h2
+            className="text-sm sm:text-base font-bold text-foreground"
+            style={{ fontFamily: font }}
+          >
             {title}
           </h2>
           <button
             onClick={onClose}
             className="p-1.5 rounded-lg text-muted-foreground hover:bg-muted transition-colors"
           >
-            <X size={18} />
+            <X size={16} className="sm:hidden" />
+            <X size={18} className="hidden sm:block" />
           </button>
         </div>
-        <div className="overflow-y-auto flex-1 px-6 py-5">{children}</div>
+        <div className="overflow-y-auto flex-1 px-4 sm:px-6 py-4 sm:py-5">{children}</div>
       </div>
     </div>
   );
@@ -286,13 +351,16 @@ function Field({
   children: React.ReactNode;
 }) {
   return (
-    <div className="flex flex-col gap-1.5">
-      <label className="text-sm font-semibold text-foreground" style={{ fontFamily: font }}>
+    <div className="flex flex-col gap-1 sm:gap-1.5">
+      <label
+        className="text-xs sm:text-sm font-semibold text-foreground"
+        style={{ fontFamily: font }}
+      >
         {label}
       </label>
       {children}
       {hint && (
-        <span className="text-xs text-muted-foreground" style={{ fontFamily: font }}>
+        <span className="text-[10px] sm:text-xs text-muted-foreground" style={{ fontFamily: font }}>
           {hint}
         </span>
       )}
@@ -307,6 +375,7 @@ function Inp({
   dir,
   type = 'text',
   min,
+  max,
 }: {
   value: string;
   onChange: (v: string) => void;
@@ -314,6 +383,7 @@ function Inp({
   dir?: string;
   type?: string;
   min?: string;
+  max?: string;
 }) {
   return (
     <input
@@ -322,8 +392,9 @@ function Inp({
       placeholder={placeholder}
       type={type}
       min={min}
+      max={max}
       dir={dir}
-      className="w-full px-3 py-2 rounded-xl border border-border bg-background text-foreground text-sm outline-none focus:ring-2 focus:ring-primary/30 transition-all"
+      className="w-full px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-xl border border-border bg-background text-foreground text-xs sm:text-sm outline-none focus:ring-2 focus:ring-primary/30 transition-all"
     />
   );
 }
@@ -348,7 +419,7 @@ function Textarea({
       placeholder={placeholder}
       dir={dir}
       rows={rows}
-      className="w-full px-3 py-2 rounded-xl border border-border bg-background text-foreground text-sm outline-none focus:ring-2 focus:ring-primary/30 transition-all resize-none"
+      className="w-full px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-xl border border-border bg-background text-foreground text-xs sm:text-sm outline-none focus:ring-2 focus:ring-primary/30 transition-all resize-none"
     />
   );
 }
@@ -367,10 +438,10 @@ function ActionButtons({
   t: TType;
 }) {
   return (
-    <div className="flex items-center justify-end gap-2 pt-4 border-t border-border mt-4">
+    <div className="flex items-center justify-end gap-2 pt-3 sm:pt-4 border-t border-border mt-3 sm:mt-4">
       <button
         onClick={onClose}
-        className="px-4 py-2 rounded-xl border border-border text-sm font-semibold text-muted-foreground hover:bg-muted transition-all"
+        className="px-3 sm:px-4 py-1.5 sm:py-2 rounded-xl border border-border text-xs sm:text-sm font-semibold text-muted-foreground hover:bg-muted transition-all"
         style={{ fontFamily: font }}
       >
         {t.cancel}
@@ -378,10 +449,10 @@ function ActionButtons({
       <button
         onClick={onSave}
         disabled={saving}
-        className="px-5 py-2 rounded-xl gradient-primary text-white text-sm font-bold shadow hover:opacity-90 active:scale-95 transition-all disabled:opacity-60"
+        className="px-4 sm:px-5 py-1.5 sm:py-2 rounded-xl gradient-primary text-white text-xs sm:text-sm font-bold shadow hover:opacity-90 active:scale-95 transition-all disabled:opacity-60"
         style={{ fontFamily: font }}
       >
-        {saving ? <Loader2 size={16} className="animate-spin" /> : t.save}
+        {saving ? <Loader2 size={14} className="animate-spin" /> : t.save}
       </button>
     </div>
   );
@@ -391,7 +462,7 @@ function QTypeBadge({ type, t, font }: { type: string; t: TType; font?: string }
   if (type === 'mcq')
     return (
       <span
-        className="text-xs px-2 py-0.5 rounded-full font-bold bg-primary/10 text-primary"
+        className="text-[10px] sm:text-xs px-1.5 sm:px-2 py-0.5 rounded-full font-bold bg-primary/10 text-primary"
         style={{ fontFamily: font }}
       >
         {t.mcq}
@@ -400,7 +471,7 @@ function QTypeBadge({ type, t, font }: { type: string; t: TType; font?: string }
   if (type === 'true_false')
     return (
       <span
-        className="text-xs px-2 py-0.5 rounded-full font-bold bg-secondary/10 text-secondary"
+        className="text-[10px] sm:text-xs px-1.5 sm:px-2 py-0.5 rounded-full font-bold bg-secondary/10 text-secondary"
         style={{ fontFamily: font }}
       >
         {t.trueFalse}
@@ -408,10 +479,52 @@ function QTypeBadge({ type, t, font }: { type: string; t: TType; font?: string }
     );
   return (
     <span
-      className="text-xs px-2 py-0.5 rounded-full font-bold bg-amber-100 text-amber-700"
+      className="text-[10px] sm:text-xs px-1.5 sm:px-2 py-0.5 rounded-full font-bold bg-amber-100 text-amber-700"
       style={{ fontFamily: font }}
     >
       {t.essay}
+    </span>
+  );
+}
+
+// ── ScheduleBadge — shown on each exam card in the list ───────
+function ScheduleBadge({
+  scheduledAt,
+  t,
+  lang,
+  font,
+}: {
+  scheduledAt: string | null | undefined;
+  t: TType;
+  lang: 'ar' | 'en';
+  font?: string;
+}) {
+  if (!scheduledAt) return null;
+
+  const live = isExamLive(scheduledAt);
+  const label = formatScheduledAt(scheduledAt, lang);
+
+  if (live) {
+    return (
+      <span
+        className="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold bg-green-50 text-green-600 border border-green-200"
+        style={{ fontFamily: font }}
+        title={`${t.scheduledFor}: ${label}`}
+      >
+        <CalendarCheck2 size={11} />
+        {t.schedulePast}
+      </span>
+    );
+  }
+
+  return (
+    <span
+      className="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold bg-amber-50 text-amber-600 border border-amber-200"
+      style={{ fontFamily: font }}
+      title={`${t.scheduledFor}: ${label}`}
+    >
+      <CalendarClock size={11} />
+      {label}
     </span>
   );
 }
@@ -466,27 +579,44 @@ export default function AdminCourseLessonsPage({ params }: { params: Promise<{ i
 
   return (
     <>
-      <div className="flex items-center gap-3 mb-6">
+      <div className="flex items-center gap-2 sm:gap-3 mb-4 sm:mb-6 flex-wrap">
         <button
           onClick={() => router.push('/admin/courses')}
-          className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
+          className="flex items-center gap-1.5 text-xs sm:text-sm text-muted-foreground hover:text-foreground transition-colors"
           style={{ fontFamily: font }}
         >
-          {isRtl ? <ArrowRight size={16} /> : <ArrowRight size={16} className="rotate-180" />}
+          {isRtl ? (
+            <ArrowRight size={14} className="sm:hidden" />
+          ) : (
+            <ArrowRight size={14} className="rotate-180 sm:hidden" />
+          )}
+          {isRtl ? (
+            <ArrowRight size={16} className="hidden sm:block" />
+          ) : (
+            <ArrowRight size={16} className="rotate-180 hidden sm:block" />
+          )}
           {t.back}
         </button>
         <span className="text-muted-foreground">/</span>
-        <h1 className="text-xl font-extrabold text-foreground" style={{ fontFamily: font }}>
+        <h1
+          className="text-lg sm:text-xl font-extrabold text-foreground"
+          style={{ fontFamily: font }}
+        >
           {t.pageTitle}
         </h1>
       </div>
 
-      <div className="flex gap-1 bg-muted/40 p-1 rounded-2xl mb-6 w-fit">
+      <div className="flex gap-1 bg-muted/40 p-1 rounded-2xl mb-4 sm:mb-6 w-fit overflow-x-auto max-w-full">
         {(['videos', 'questions', 'exams'] as ActiveTab[]).map((tab) => {
           const icons = {
-            videos: <Video size={15} />,
-            questions: <HelpCircle size={15} />,
-            exams: <ClipboardList size={15} />,
+            videos: <Video size={14} className="sm:hidden" />,
+            questions: <HelpCircle size={14} className="sm:hidden" />,
+            exams: <ClipboardList size={14} className="sm:hidden" />,
+          };
+          const iconsDesktop = {
+            videos: <Video size={15} className="hidden sm:block" />,
+            questions: <HelpCircle size={15} className="hidden sm:block" />,
+            exams: <ClipboardList size={15} className="hidden sm:block" />,
           };
           const labels = { videos: t.tabVideos, questions: t.tabQuestions, exams: t.tabExams };
           const counts = {
@@ -498,12 +628,14 @@ export default function AdminCourseLessonsPage({ params }: { params: Promise<{ i
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
-              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all ${activeTab === tab ? 'bg-card text-primary shadow border border-border' : 'text-muted-foreground hover:text-foreground'}`}
+              className={`flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-4 py-1.5 sm:py-2 rounded-xl text-xs sm:text-sm font-bold transition-all whitespace-nowrap ${activeTab === tab ? 'bg-card text-primary shadow border border-border' : 'text-muted-foreground hover:text-foreground'}`}
               style={{ fontFamily: font }}
             >
-              {icons[tab]} {labels[tab]}
+              {icons[tab]}
+              {iconsDesktop[tab]}
+              {labels[tab]}
               <span
-                className={`text-xs px-1.5 py-0.5 rounded-full font-bold ${activeTab === tab ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'}`}
+                className={`text-[10px] sm:text-xs px-1.5 sm:px-1.5 py-0.5 rounded-full font-bold ${activeTab === tab ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'}`}
               >
                 {counts[tab]}
               </span>
@@ -553,7 +685,7 @@ export default function AdminCourseLessonsPage({ params }: { params: Promise<{ i
 }
 
 // ═══════════════════════════════════════════════════════════════
-// VIDEOS TAB  (unchanged)
+// VIDEOS TAB
 // ═══════════════════════════════════════════════════════════════
 function VideosTab({
   courseId,
@@ -655,29 +787,35 @@ function VideosTab({
   return (
     <>
       <div className="bg-card rounded-2xl border border-border shadow-sm overflow-hidden">
-        <div className="flex items-center justify-between px-5 py-4 border-b border-border">
+        <div className="flex items-center justify-between px-3 sm:px-5 py-3 sm:py-4 border-b border-border gap-2 flex-wrap">
           <h2
-            className="font-bold text-foreground text-sm flex items-center gap-2"
+            className="font-bold text-foreground text-xs sm:text-sm flex items-center gap-1.5 sm:gap-2"
             style={{ fontFamily: font }}
           >
-            <Video size={16} className="text-primary" /> {t.tabVideos} ({lessons.length})
+            <Video size={14} className="text-primary sm:hidden" />
+            <Video size={16} className="text-primary hidden sm:block" />
+            {t.tabVideos} ({lessons.length})
           </h2>
           <button
             onClick={openAdd}
-            className="flex items-center gap-2 px-3 py-2 rounded-xl gradient-primary text-white text-xs font-bold shadow hover:opacity-90 active:scale-95 transition-all"
+            className="flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-xl gradient-primary text-white text-[10px] sm:text-xs font-bold shadow hover:opacity-90 active:scale-95 transition-all"
             style={{ fontFamily: font }}
           >
-            <Plus size={14} /> {t.addVideo}
+            <Plus size={13} className="sm:hidden" />
+            <Plus size={14} className="hidden sm:block" />
+            {t.addVideo}
           </button>
         </div>
         {loading ? (
-          <div className="py-16 flex justify-center">
-            <Loader2 size={28} className="animate-spin text-primary" />
+          <div className="py-12 sm:py-16 flex justify-center">
+            <Loader2 size={24} className="animate-spin text-primary sm:hidden" />
+            <Loader2 size={28} className="animate-spin text-primary hidden sm:block" />
           </div>
         ) : lessons.length === 0 ? (
-          <div className="py-16 flex flex-col items-center gap-3">
-            <Video size={40} className="text-muted-foreground/30" />
-            <p className="text-muted-foreground text-sm" style={{ fontFamily: font }}>
+          <div className="py-12 sm:py-16 flex flex-col items-center gap-2 sm:gap-3">
+            <Video size={32} className="text-muted-foreground/30 sm:hidden" />
+            <Video size={40} className="text-muted-foreground/30 hidden sm:block" />
+            <p className="text-muted-foreground text-xs sm:text-sm" style={{ fontFamily: font }}>
               {t.noVideos}
             </p>
           </div>
@@ -686,7 +824,7 @@ function VideosTab({
             {lessons.map((lesson, idx) => (
               <div
                 key={lesson.id}
-                className="flex items-center gap-3 px-5 py-3.5 hover:bg-muted/20 transition-colors"
+                className="flex items-center gap-2 sm:gap-3 px-3 sm:px-5 py-2.5 sm:py-3.5 hover:bg-muted/20 transition-colors"
               >
                 <div className="flex flex-col gap-0.5 flex-shrink-0">
                   <button
@@ -694,42 +832,42 @@ function VideosTab({
                     disabled={idx === 0}
                     className="p-0.5 rounded text-muted-foreground hover:text-foreground disabled:opacity-20"
                   >
-                    <ChevronUp size={14} />
+                    <ChevronUp size={13} />
                   </button>
                   <button
                     onClick={() => reorder(lesson, 'down')}
                     disabled={idx === lessons.length - 1}
                     className="p-0.5 rounded text-muted-foreground hover:text-foreground disabled:opacity-20"
                   >
-                    <ChevronDown size={14} />
+                    <ChevronDown size={13} />
                   </button>
                 </div>
-                <span className="text-xs font-bold text-muted-foreground w-5 text-center">
+                <span className="text-[10px] sm:text-xs font-bold text-muted-foreground w-4 sm:w-5 text-center">
                   {lesson.order}
                 </span>
                 {lesson.video ? (
                   <img
                     src={`https://vumbnail.com/${lesson.video.vimeoId}.jpg`}
                     alt={lesson.title}
-                    className="w-20 h-12 rounded-lg object-cover flex-shrink-0 border border-border"
+                    className="w-14 h-9 sm:w-20 sm:h-12 rounded-lg object-cover flex-shrink-0 border border-border"
                     onError={(e) => {
                       (e.target as HTMLImageElement).style.display = 'none';
                     }}
                   />
                 ) : (
-                  <div className="w-20 h-12 rounded-lg bg-muted flex items-center justify-center flex-shrink-0">
-                    <Video size={16} className="text-muted-foreground" />
+                  <div className="w-14 h-9 sm:w-20 sm:h-12 rounded-lg bg-muted flex items-center justify-center flex-shrink-0">
+                    <Video size={14} className="text-muted-foreground" />
                   </div>
                 )}
                 <div className="flex-1 min-w-0">
                   <p
-                    className="font-semibold text-foreground text-sm truncate"
+                    className="font-semibold text-foreground text-xs sm:text-sm truncate"
                     style={{ fontFamily: font }}
                   >
                     {lesson.title}
                   </p>
                   {lesson.video && (
-                    <span className="text-xs text-muted-foreground" dir="ltr">
+                    <span className="text-[10px] sm:text-xs text-muted-foreground" dir="ltr">
                       ID: {lesson.video.vimeoId}
                       {lesson.video.durationSec
                         ? ` · ${formatDuration(lesson.video.durationSec)}`
@@ -753,24 +891,24 @@ function VideosTab({
                     </>
                   )}
                 </span>
-                <div className="flex items-center gap-1 flex-shrink-0">
+                <div className="flex items-center gap-0.5 sm:gap-1 flex-shrink-0">
                   <button
                     onClick={() => openEdit(lesson)}
-                    className="p-1.5 rounded-lg text-muted-foreground hover:bg-primary/10 hover:text-primary transition-colors"
+                    className="p-1 sm:p-1.5 rounded-lg text-muted-foreground hover:bg-primary/10 hover:text-primary transition-colors"
                   >
-                    <Pencil size={14} />
+                    <Pencil size={13} />
                   </button>
                   <button
                     onClick={() => toggleVis(lesson)}
-                    className="p-1.5 rounded-lg text-muted-foreground hover:bg-orange-50 hover:text-orange-500 transition-colors"
+                    className="p-1 sm:p-1.5 rounded-lg text-muted-foreground hover:bg-orange-50 hover:text-orange-500 transition-colors"
                   >
-                    {lesson.isVisible ? <EyeOff size={14} /> : <Eye size={14} />}
+                    {lesson.isVisible ? <EyeOff size={13} /> : <Eye size={13} />}
                   </button>
                   <button
                     onClick={() => setDeleteTarget(lesson)}
-                    className="p-1.5 rounded-lg text-muted-foreground hover:bg-red-50 hover:text-red-500 transition-colors"
+                    className="p-1 sm:p-1.5 rounded-lg text-muted-foreground hover:bg-red-50 hover:text-red-500 transition-colors"
                   >
-                    <Trash2 size={14} />
+                    <Trash2 size={13} />
                   </button>
                 </div>
               </div>
@@ -785,7 +923,7 @@ function VideosTab({
           title={editLesson ? t.editVideo : t.addVideo}
           font={font}
         >
-          <div className="flex flex-col gap-3">
+          <div className="flex flex-col gap-2.5 sm:gap-3">
             <Field label={t.titleLabel} font={font}>
               <Inp
                 value={form.title}
@@ -826,21 +964,24 @@ function VideosTab({
       )}
       {deleteTarget && (
         <Modal onClose={() => setDeleteTarget(null)} title={t.delete} font={font}>
-          <p className="text-sm text-muted-foreground mb-6" style={{ fontFamily: font }}>
+          <p
+            className="text-xs sm:text-sm text-muted-foreground mb-4 sm:mb-6"
+            style={{ fontFamily: font }}
+          >
             {t.confirmDelete}{' '}
             <span className="font-bold text-foreground">{deleteTarget.title}</span>؟
           </p>
           <div className="flex items-center justify-end gap-2">
             <button
               onClick={() => setDeleteTarget(null)}
-              className="px-4 py-2 rounded-xl border border-border text-sm font-semibold text-muted-foreground hover:bg-muted transition-all"
+              className="px-3 sm:px-4 py-1.5 sm:py-2 rounded-xl border border-border text-xs sm:text-sm font-semibold text-muted-foreground hover:bg-muted transition-all"
               style={{ fontFamily: font }}
             >
               {t.cancel}
             </button>
             <button
               onClick={handleDelete}
-              className="px-5 py-2 rounded-xl bg-red-500 hover:bg-red-600 text-white text-sm font-bold transition-all"
+              className="px-4 sm:px-5 py-1.5 sm:py-2 rounded-xl bg-red-500 hover:bg-red-600 text-white text-xs sm:text-sm font-bold transition-all"
               style={{ fontFamily: font }}
             >
               {t.confirmDeleteBtn}
@@ -853,7 +994,7 @@ function VideosTab({
 }
 
 // ═══════════════════════════════════════════════════════════════
-// QUESTIONS TAB  — with essay support
+// QUESTIONS TAB
 // ═══════════════════════════════════════════════════════════════
 type QForm = {
   text: string;
@@ -994,42 +1135,45 @@ function QuestionsTab({
   return (
     <>
       <div className="bg-card rounded-2xl border border-border shadow-sm overflow-hidden">
-        <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-4 border-b border-border">
+        <div className="flex flex-wrap items-center justify-between gap-2 sm:gap-3 px-3 sm:px-5 py-3 sm:py-4 border-b border-border">
           <h2
-            className="font-bold text-foreground text-sm flex items-center gap-2"
+            className="font-bold text-foreground text-xs sm:text-sm flex items-center gap-1.5 sm:gap-2"
             style={{ fontFamily: font }}
           >
-            <HelpCircle size={16} className="text-secondary" /> {t.tabQuestions} ({questions.length}
-            )
+            <HelpCircle size={14} className="text-secondary sm:hidden" />
+            <HelpCircle size={16} className="text-secondary hidden sm:block" />
+            {t.tabQuestions} ({questions.length})
           </h2>
           <button
             onClick={openAdd}
-            className="flex items-center gap-2 px-3 py-2 rounded-xl gradient-primary text-white text-xs font-bold shadow hover:opacity-90 active:scale-95 transition-all"
+            className="flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-xl gradient-primary text-white text-[10px] sm:text-xs font-bold shadow hover:opacity-90 active:scale-95 transition-all"
             style={{ fontFamily: font }}
           >
-            <Plus size={14} /> {t.addQuestion}
+            <Plus size={13} className="sm:hidden" />
+            <Plus size={14} className="hidden sm:block" />
+            {t.addQuestion}
           </button>
         </div>
-        <div className="flex flex-wrap gap-2 px-5 py-3 border-b border-border bg-muted/20">
-          <div className="relative flex-1 min-w-[160px]">
+        <div className="flex flex-wrap gap-2 px-3 sm:px-5 py-2.5 sm:py-3 border-b border-border bg-muted/20">
+          <div className="relative flex-1 min-w-[140px] sm:min-w-[160px]">
             <Search
-              size={14}
-              className={`absolute top-1/2 -translate-y-1/2 text-muted-foreground ${isRtl ? 'right-3' : 'left-3'}`}
+              size={13}
+              className={`absolute top-1/2 -translate-y-1/2 text-muted-foreground ${isRtl ? 'right-2.5 sm:right-3' : 'left-2.5 sm:left-3'}`}
             />
             <input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder={t.searchQuestions}
-              className={`w-full text-xs py-2 ${isRtl ? 'pr-8 pl-3' : 'pl-8 pr-3'} rounded-xl border border-border bg-background text-foreground outline-none focus:ring-2 focus:ring-primary/30 transition-all`}
+              className={`w-full text-[10px] sm:text-xs py-1.5 sm:py-2 ${isRtl ? 'pr-7 sm:pr-8 pl-2.5 sm:pl-3' : 'pl-7 sm:pl-8 pr-2.5 sm:pr-3'} rounded-xl border border-border bg-background text-foreground outline-none focus:ring-2 focus:ring-primary/30 transition-all`}
               style={{ fontFamily: font }}
             />
           </div>
           <div className="flex items-center gap-1.5">
-            <Filter size={13} className="text-muted-foreground" />
+            <Filter size={12} className="text-muted-foreground" />
             <select
               value={filterTag}
               onChange={(e) => setFilterTag(e.target.value)}
-              className="text-xs py-2 px-3 rounded-xl border border-border bg-background text-foreground outline-none"
+              className="text-[10px] sm:text-xs py-1.5 sm:py-2 px-2 sm:px-3 rounded-xl border border-border bg-background text-foreground outline-none"
               style={{ fontFamily: font }}
             >
               <option value="">{t.allTags}</option>
@@ -1043,7 +1187,7 @@ function QuestionsTab({
           <select
             value={filterType}
             onChange={(e) => setFilterType(e.target.value)}
-            className="text-xs py-2 px-3 rounded-xl border border-border bg-background text-foreground outline-none"
+            className="text-[10px] sm:text-xs py-1.5 sm:py-2 px-2 sm:px-3 rounded-xl border border-border bg-background text-foreground outline-none"
             style={{ fontFamily: font }}
           >
             <option value="">{isRtl ? 'كل الأنواع' : 'All types'}</option>
@@ -1053,13 +1197,15 @@ function QuestionsTab({
           </select>
         </div>
         {loading ? (
-          <div className="py-16 flex justify-center">
-            <Loader2 size={28} className="animate-spin text-primary" />
+          <div className="py-12 sm:py-16 flex justify-center">
+            <Loader2 size={24} className="animate-spin text-primary sm:hidden" />
+            <Loader2 size={28} className="animate-spin text-primary hidden sm:block" />
           </div>
         ) : filtered.length === 0 ? (
-          <div className="py-16 flex flex-col items-center gap-3">
-            <HelpCircle size={40} className="text-muted-foreground/30" />
-            <p className="text-muted-foreground text-sm" style={{ fontFamily: font }}>
+          <div className="py-12 sm:py-16 flex flex-col items-center gap-2 sm:gap-3">
+            <HelpCircle size={32} className="text-muted-foreground/30 sm:hidden" />
+            <HelpCircle size={40} className="text-muted-foreground/30 hidden sm:block" />
+            <p className="text-muted-foreground text-xs sm:text-sm" style={{ fontFamily: font }}>
               {t.noQuestions}
             </p>
           </div>
@@ -1069,35 +1215,40 @@ function QuestionsTab({
               const opts = parseOptions(q.optionsJson);
               const isEssay = q.type === 'essay';
               return (
-                <div key={q.id} className="px-5 py-4 hover:bg-muted/20 transition-colors">
-                  <div className="flex items-start justify-between gap-3">
+                <div
+                  key={q.id}
+                  className="px-3 sm:px-5 py-3 sm:py-4 hover:bg-muted/20 transition-colors"
+                >
+                  <div className="flex items-start justify-between gap-2 sm:gap-3">
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-1.5 flex-wrap">
-                        <span className="text-xs font-bold text-muted-foreground">#{i + 1}</span>
+                      <div className="flex items-center gap-1.5 sm:gap-2 mb-1 sm:mb-1.5 flex-wrap">
+                        <span className="text-[10px] sm:text-xs font-bold text-muted-foreground">
+                          #{i + 1}
+                        </span>
                         <QTypeBadge type={q.type} t={t} font={font} />
                         <span
-                          className="text-xs px-2 py-0.5 rounded-full bg-accent/20 font-semibold"
+                          className="text-[10px] sm:text-xs px-1.5 sm:px-2 py-0.5 rounded-full bg-accent/20 font-semibold"
                           style={{ fontFamily: font }}
                         >
                           {q.lessonTag}
                         </span>
                       </div>
                       <p
-                        className="text-sm font-semibold text-foreground"
+                        className="text-xs sm:text-sm font-semibold text-foreground"
                         style={{ fontFamily: font }}
                       >
                         {q.text}
                       </p>
                       {!isEssay && opts.length > 0 && (
-                        <div className="flex flex-wrap gap-1.5 mt-2">
+                        <div className="flex flex-wrap gap-1 sm:gap-1.5 mt-1.5 sm:mt-2">
                           {opts.map((opt, oi) => (
                             <span
                               key={oi}
-                              className={`text-xs px-2.5 py-1 rounded-lg border font-medium ${opt === q.correctAnswer ? 'border-green-400 bg-green-50 text-green-700' : 'border-border bg-muted/40 text-muted-foreground'}`}
+                              className={`text-[10px] sm:text-xs px-2 sm:px-2.5 py-0.5 sm:py-1 rounded-lg border font-medium ${opt === q.correctAnswer ? 'border-green-400 bg-green-50 text-green-700' : 'border-border bg-muted/40 text-muted-foreground'}`}
                               style={{ fontFamily: font }}
                             >
                               {opt === q.correctAnswer && (
-                                <Check size={10} className="inline mr-1" />
+                                <Check size={9} className="inline mr-1" />
                               )}
                               {opt}
                             </span>
@@ -1105,10 +1256,10 @@ function QuestionsTab({
                         </div>
                       )}
                       {isEssay && (
-                        <div className="mt-2 flex items-start gap-1.5">
-                          <FileText size={12} className="text-amber-500 mt-0.5 flex-shrink-0" />
+                        <div className="mt-1.5 sm:mt-2 flex items-start gap-1.5">
+                          <FileText size={11} className="text-amber-500 mt-0.5 flex-shrink-0" />
                           <p
-                            className="text-xs text-muted-foreground italic"
+                            className="text-[10px] sm:text-xs text-muted-foreground italic"
                             style={{ fontFamily: font }}
                           >
                             {q.correctAnswer ||
@@ -1117,18 +1268,18 @@ function QuestionsTab({
                         </div>
                       )}
                     </div>
-                    <div className="flex items-center gap-1 flex-shrink-0">
+                    <div className="flex items-center gap-0.5 sm:gap-1 flex-shrink-0">
                       <button
                         onClick={() => openEdit(q)}
-                        className="p-1.5 rounded-lg text-muted-foreground hover:bg-primary/10 hover:text-primary transition-colors"
+                        className="p-1 sm:p-1.5 rounded-lg text-muted-foreground hover:bg-primary/10 hover:text-primary transition-colors"
                       >
-                        <Pencil size={14} />
+                        <Pencil size={13} />
                       </button>
                       <button
                         onClick={() => setDeleteTarget(q)}
-                        className="p-1.5 rounded-lg text-muted-foreground hover:bg-red-50 hover:text-red-500 transition-colors"
+                        className="p-1 sm:p-1.5 rounded-lg text-muted-foreground hover:bg-red-50 hover:text-red-500 transition-colors"
                       >
-                        <Trash2 size={14} />
+                        <Trash2 size={13} />
                       </button>
                     </div>
                   </div>
@@ -1146,7 +1297,7 @@ function QuestionsTab({
           font={font}
           wide
         >
-          <div className="flex flex-col gap-4">
+          <div className="flex flex-col gap-3 sm:gap-4">
             <Field label={t.questionText} font={font}>
               <Textarea
                 value={form.text}
@@ -1164,12 +1315,12 @@ function QuestionsTab({
                 dir={isRtl ? 'rtl' : 'ltr'}
               />
               {allTags.length > 0 && (
-                <div className="flex flex-wrap gap-1.5 mt-1.5">
+                <div className="flex flex-wrap gap-1 sm:gap-1.5 mt-1 sm:mt-1.5">
                   {allTags.map((tag) => (
                     <button
                       key={tag}
                       onClick={() => f('lessonTag', tag)}
-                      className={`text-xs px-2 py-0.5 rounded-full border transition-all ${form.lessonTag === tag ? 'border-primary bg-primary/10 text-primary' : 'border-border text-muted-foreground hover:border-primary/50'}`}
+                      className={`text-[10px] sm:text-xs px-1.5 sm:px-2 py-0.5 rounded-full border transition-all ${form.lessonTag === tag ? 'border-primary bg-primary/10 text-primary' : 'border-border text-muted-foreground hover:border-primary/50'}`}
                       style={{ fontFamily: font }}
                     >
                       {tag}
@@ -1179,13 +1330,13 @@ function QuestionsTab({
               )}
             </Field>
             <Field label={t.questionType} font={font}>
-              <div className="grid grid-cols-3 gap-2">
+              <div className="grid grid-cols-3 gap-1.5 sm:gap-2">
                 {(['mcq', 'true_false', 'essay'] as const).map((type) => {
                   const labels = { mcq: t.mcq, true_false: t.trueFalse, essay: t.essay };
                   const icons = {
-                    mcq: <Circle size={14} />,
-                    true_false: <Check size={14} />,
-                    essay: <FileText size={14} />,
+                    mcq: <Circle size={13} />,
+                    true_false: <Check size={13} />,
+                    essay: <FileText size={13} />,
                   };
                   return (
                     <button
@@ -1199,7 +1350,7 @@ function QuestionsTab({
                           type === 'true_false' ? [t.true, t.false] : type === 'mcq' ? ['', ''] : []
                         );
                       }}
-                      className={`flex items-center justify-center gap-1.5 py-2 rounded-xl border text-xs font-bold transition-all ${form.type === type ? 'border-primary bg-primary/10 text-primary' : 'border-border text-muted-foreground hover:border-primary/30'}`}
+                      className={`flex items-center justify-center gap-1 sm:gap-1.5 py-1.5 sm:py-2 rounded-xl border text-[10px] sm:text-xs font-bold transition-all ${form.type === type ? 'border-primary bg-primary/10 text-primary' : 'border-border text-muted-foreground hover:border-primary/30'}`}
                       style={{ fontFamily: font }}
                     >
                       {icons[type]} {labels[type]}
@@ -1210,23 +1361,23 @@ function QuestionsTab({
             </Field>
 
             {form.type === 'mcq' && (
-              <div className="flex flex-col gap-2">
+              <div className="flex flex-col gap-1.5 sm:gap-2">
                 <label
-                  className="text-sm font-semibold text-foreground"
+                  className="text-xs sm:text-sm font-semibold text-foreground"
                   style={{ fontFamily: font }}
                 >
                   {t.options}
                 </label>
                 {form.options.map((opt, i) => (
-                  <div key={i} className="flex items-center gap-2">
+                  <div key={i} className="flex items-center gap-1.5 sm:gap-2">
                     <button
                       onClick={() => f('correctAnswer', opt.trim())}
-                      className={`p-1.5 rounded-full flex-shrink-0 transition-all ${form.correctAnswer === opt.trim() && opt.trim() ? 'text-green-500' : 'text-muted-foreground/40 hover:text-green-400'}`}
+                      className={`p-1 sm:p-1.5 rounded-full flex-shrink-0 transition-all ${form.correctAnswer === opt.trim() && opt.trim() ? 'text-green-500' : 'text-muted-foreground/40 hover:text-green-400'}`}
                     >
                       {form.correctAnswer === opt.trim() && opt.trim() ? (
-                        <CheckCircle2 size={18} />
+                        <CheckCircle2 size={16} />
                       ) : (
-                        <Circle size={18} />
+                        <Circle size={16} />
                       )}
                     </button>
                     <Inp
@@ -1246,9 +1397,9 @@ function QuestionsTab({
                           f('options', opts);
                           if (form.correctAnswer === opt.trim()) f('correctAnswer', '');
                         }}
-                        className="p-1.5 rounded-lg text-muted-foreground hover:text-red-500 transition-colors flex-shrink-0"
+                        className="p-1 sm:p-1.5 rounded-lg text-muted-foreground hover:text-red-500 transition-colors flex-shrink-0"
                       >
-                        <X size={14} />
+                        <X size={13} />
                       </button>
                     )}
                   </div>
@@ -1256,18 +1407,18 @@ function QuestionsTab({
                 {form.options.length < 6 && (
                   <button
                     onClick={() => f('options', [...form.options, ''])}
-                    className="flex items-center gap-1.5 text-xs text-primary hover:underline font-semibold"
+                    className="flex items-center gap-1.5 text-[10px] sm:text-xs text-primary hover:underline font-semibold"
                     style={{ fontFamily: font }}
                   >
-                    <Plus size={13} /> {t.addOption}
+                    <Plus size={12} /> {t.addOption}
                   </button>
                 )}
                 {form.correctAnswer && (
                   <p
-                    className="text-xs text-green-600 font-semibold flex items-center gap-1"
+                    className="text-[10px] sm:text-xs text-green-600 font-semibold flex items-center gap-1"
                     style={{ fontFamily: font }}
                   >
-                    <Check size={12} /> {t.correctAnswer}: {form.correctAnswer}
+                    <Check size={11} /> {t.correctAnswer}: {form.correctAnswer}
                   </p>
                 )}
               </div>
@@ -1280,7 +1431,7 @@ function QuestionsTab({
                     <button
                       key={opt}
                       onClick={() => f('correctAnswer', opt)}
-                      className={`flex-1 py-2 rounded-xl border text-sm font-bold transition-all ${form.correctAnswer === opt ? 'border-green-400 bg-green-50 text-green-700' : 'border-border text-muted-foreground hover:border-green-300'}`}
+                      className={`flex-1 py-1.5 sm:py-2 rounded-xl border text-xs sm:text-sm font-bold transition-all ${form.correctAnswer === opt ? 'border-green-400 bg-green-50 text-green-700' : 'border-border text-muted-foreground hover:border-green-300'}`}
                       style={{ fontFamily: font }}
                     >
                       {opt}
@@ -1292,10 +1443,10 @@ function QuestionsTab({
 
             {form.type === 'essay' && (
               <>
-                <div className="flex items-start gap-2 px-3 py-2.5 rounded-xl bg-amber-50 border border-amber-200">
-                  <FileText size={15} className="text-amber-600 mt-0.5 flex-shrink-0" />
+                <div className="flex items-start gap-2 px-2.5 sm:px-3 py-2 sm:py-2.5 rounded-xl bg-amber-50 border border-amber-200">
+                  <FileText size={14} className="text-amber-600 mt-0.5 flex-shrink-0" />
                   <p
-                    className="text-xs text-amber-700 leading-relaxed"
+                    className="text-[10px] sm:text-xs text-amber-700 leading-relaxed"
                     style={{ fontFamily: font }}
                   >
                     {t.essayNote}
@@ -1325,21 +1476,24 @@ function QuestionsTab({
 
       {deleteTarget && (
         <Modal onClose={() => setDeleteTarget(null)} title={t.delete} font={font}>
-          <p className="text-sm text-muted-foreground mb-6" style={{ fontFamily: font }}>
+          <p
+            className="text-xs sm:text-sm text-muted-foreground mb-4 sm:mb-6"
+            style={{ fontFamily: font }}
+          >
             {t.confirmDelete} <span className="font-bold text-foreground">{deleteTarget.text}</span>
             ؟
           </p>
           <div className="flex items-center justify-end gap-2">
             <button
               onClick={() => setDeleteTarget(null)}
-              className="px-4 py-2 rounded-xl border border-border text-sm font-semibold text-muted-foreground hover:bg-muted transition-all"
+              className="px-3 sm:px-4 py-1.5 sm:py-2 rounded-xl border border-border text-xs sm:text-sm font-semibold text-muted-foreground hover:bg-muted transition-all"
               style={{ fontFamily: font }}
             >
               {t.cancel}
             </button>
             <button
               onClick={handleDelete}
-              className="px-5 py-2 rounded-xl bg-red-500 hover:bg-red-600 text-white text-sm font-bold transition-all"
+              className="px-4 sm:px-5 py-1.5 sm:py-2 rounded-xl bg-red-500 hover:bg-red-600 text-white text-xs sm:text-sm font-bold transition-all"
               style={{ fontFamily: font }}
             >
               {t.confirmDeleteBtn}
@@ -1352,8 +1506,7 @@ function QuestionsTab({
 }
 
 // ═══════════════════════════════════════════════════════════════
-// EXAMS TAB  — essay questions excluded from bank picker
-// each exam question now has an editable "mark" (default 1)
+// EXAMS TAB — with scheduledAt scheduling feature
 // ═══════════════════════════════════════════════════════════════
 function ExamsTab({
   courseId,
@@ -1377,26 +1530,33 @@ function ExamsTab({
   allTags: string[];
 }) {
   const isRtl = lang === 'ar';
+
   const [showModal, setShowModal] = useState(false);
   const [editLesson, setEditLesson] = useState<Lesson | null>(null);
-  const [form, setForm] = useState({ title: '', durationMinutes: '', passingScore: '50' });
+  const [form, setForm] = useState({
+    title: '',
+    durationMinutes: '',
+    passingScore: '50',
+  });
+  const [scheduledValue, setScheduledValue] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Lesson | null>(null);
+
   const [manageLesson, setManageLesson] = useState<Lesson | null>(null);
   const [bankFilter, setBankFilter] = useState('');
   const [selectedBankIds, setSelectedBankIds] = useState<Set<number>>(new Set());
   const [addingQs, setAddingQs] = useState(false);
-  // Local draft values for the mark inputs, keyed by examQuestion id.
-  // Lets the user type freely without firing a request on every keystroke;
-  // the value is committed to the API on blur.
   const [markDrafts, setMarkDrafts] = useState<Record<number, string>>({});
 
   const f = (k: string, v: string) => setForm((p) => ({ ...p, [k]: v }));
+
   const openAdd = () => {
     setEditLesson(null);
     setForm({ title: '', durationMinutes: '', passingScore: '50' });
+    setScheduledValue(null);
     setShowModal(true);
   };
+
   const openEdit = (l: Lesson) => {
     setEditLesson(l);
     setForm({
@@ -1404,6 +1564,12 @@ function ExamsTab({
       durationMinutes: l.exam?.durationMinutes ? String(l.exam.durationMinutes) : '',
       passingScore: String(l.exam?.passingScore ?? 50),
     });
+    if (l.exam?.scheduledAt) {
+      const d = new Date(l.exam.scheduledAt);
+      setScheduledValue(isNaN(d.getTime()) ? null : toDatetimeLocal(d));
+    } else {
+      setScheduledValue(null);
+    }
     setShowModal(true);
   };
 
@@ -1414,10 +1580,15 @@ function ExamsTab({
     }
     setSaving(true);
     try {
+      const scheduledAt: string | null = scheduledValue
+        ? new Date(scheduledValue).toISOString()
+        : null;
+
       const payload = {
         title: form.title,
         durationMinutes: form.durationMinutes,
         passingScore: form.passingScore,
+        scheduledAt,
       };
       if (editLesson) {
         await fetch('/api/admin/lessons', {
@@ -1450,6 +1621,7 @@ function ExamsTab({
     });
     onRefresh();
   };
+
   const reorder = async (l: Lesson, dir: 'up' | 'down') => {
     await fetch('/api/admin/lessons', {
       method: 'PATCH',
@@ -1458,6 +1630,7 @@ function ExamsTab({
     });
     onRefresh();
   };
+
   const handleDelete = async () => {
     if (!deleteTarget) return;
     await fetch('/api/admin/lessons', {
@@ -1469,6 +1642,7 @@ function ExamsTab({
     setDeleteTarget(null);
     onRefresh();
   };
+
   const handleAddFromBank = async () => {
     if (!manageLesson || !selectedBankIds.size) return;
     setAddingQs(true);
@@ -1486,6 +1660,7 @@ function ExamsTab({
     toast.success(t.addedOk);
     setAddingQs(false);
   };
+
   const handleRemoveEQ = async (lessonId: number, eqId: number) => {
     await fetch('/api/admin/lessons', {
       method: 'PATCH',
@@ -1495,6 +1670,7 @@ function ExamsTab({
     onRefresh();
     toast.success(t.deletedOk);
   };
+
   const handleReorderEQ = async (lessonId: number, eqId: number, dir: 'up' | 'down') => {
     await fetch('/api/admin/lessons', {
       method: 'PATCH',
@@ -1508,7 +1684,7 @@ function ExamsTab({
     });
     onRefresh();
   };
-  // Persists a question's mark via the API, then refreshes the lesson list.
+
   const handleUpdateMark = async (lessonId: number, eqId: number, mark: number) => {
     await fetch('/api/admin/lessons', {
       method: 'PATCH',
@@ -1527,38 +1703,46 @@ function ExamsTab({
     ? (lessons.find((l) => l.id === manageLesson.id) ?? null)
     : null;
 
-  // Essay questions excluded from auto-graded exams
   const filteredBank = questions.filter((q) => {
     const inExam = currentManage?.exam?.examQuestions.some((eq) => eq.question.id === q.id);
     return !inExam && (!bankFilter || q.lessonTag === bankFilter);
   });
 
+  const minDatetimeLocal = toDatetimeLocal(new Date());
+
   return (
     <>
       <div className="bg-card rounded-2xl border border-border shadow-sm overflow-hidden">
-        <div className="flex items-center justify-between px-5 py-4 border-b border-border">
+        <div className="flex items-center justify-between px-3 sm:px-5 py-3 sm:py-4 border-b border-border gap-2 flex-wrap">
           <h2
-            className="font-bold text-foreground text-sm flex items-center gap-2"
+            className="font-bold text-foreground text-xs sm:text-sm flex items-center gap-1.5 sm:gap-2"
             style={{ fontFamily: font }}
           >
-            <ClipboardList size={16} className="text-accent" /> {t.tabExams} ({lessons.length})
+            <ClipboardList size={14} className="text-accent sm:hidden" />
+            <ClipboardList size={16} className="text-accent hidden sm:block" />
+            {t.tabExams} ({lessons.length})
           </h2>
           <button
             onClick={openAdd}
-            className="flex items-center gap-2 px-3 py-2 rounded-xl gradient-primary text-white text-xs font-bold shadow hover:opacity-90 active:scale-95 transition-all"
+            className="flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-xl gradient-primary text-white text-[10px] sm:text-xs font-bold shadow hover:opacity-90 active:scale-95 transition-all"
             style={{ fontFamily: font }}
           >
-            <Plus size={14} /> {t.addExam}
+            <Plus size={13} className="sm:hidden" />
+            <Plus size={14} className="hidden sm:block" />
+            {t.addExam}
           </button>
         </div>
+
         {loading ? (
-          <div className="py-16 flex justify-center">
-            <Loader2 size={28} className="animate-spin text-primary" />
+          <div className="py-12 sm:py-16 flex justify-center">
+            <Loader2 size={24} className="animate-spin text-primary sm:hidden" />
+            <Loader2 size={28} className="animate-spin text-primary hidden sm:block" />
           </div>
         ) : lessons.length === 0 ? (
-          <div className="py-16 flex flex-col items-center gap-3">
-            <ClipboardList size={40} className="text-muted-foreground/30" />
-            <p className="text-muted-foreground text-sm" style={{ fontFamily: font }}>
+          <div className="py-12 sm:py-16 flex flex-col items-center gap-2 sm:gap-3">
+            <ClipboardList size={32} className="text-muted-foreground/30 sm:hidden" />
+            <ClipboardList size={40} className="text-muted-foreground/30 hidden sm:block" />
+            <p className="text-muted-foreground text-xs sm:text-sm" style={{ fontFamily: font }}>
               {t.noExams}
             </p>
           </div>
@@ -1567,7 +1751,7 @@ function ExamsTab({
             {lessons.map((lesson, idx) => (
               <div
                 key={lesson.id}
-                className="flex items-center gap-3 px-5 py-4 hover:bg-muted/20 transition-colors"
+                className="flex items-center gap-2 sm:gap-3 px-3 sm:px-5 py-3 sm:py-4 hover:bg-muted/20 transition-colors flex-wrap sm:flex-nowrap"
               >
                 <div className="flex flex-col gap-0.5 flex-shrink-0">
                   <button
@@ -1575,46 +1759,55 @@ function ExamsTab({
                     disabled={idx === 0}
                     className="p-0.5 rounded text-muted-foreground hover:text-foreground disabled:opacity-20"
                   >
-                    <ChevronUp size={14} />
+                    <ChevronUp size={13} />
                   </button>
                   <button
                     onClick={() => reorder(lesson, 'down')}
                     disabled={idx === lessons.length - 1}
                     className="p-0.5 rounded text-muted-foreground hover:text-foreground disabled:opacity-20"
                   >
-                    <ChevronDown size={14} />
+                    <ChevronDown size={13} />
                   </button>
                 </div>
-                <span className="text-xs font-bold text-muted-foreground w-5 text-center">
+                <span className="text-[10px] sm:text-xs font-bold text-muted-foreground w-4 sm:w-5 text-center">
                   {lesson.order}
                 </span>
-                <div className="w-12 h-12 rounded-xl bg-accent/10 flex items-center justify-center flex-shrink-0">
-                  <ClipboardList size={22} className="text-accent" />
+                <div className="w-9 h-9 sm:w-12 sm:h-12 rounded-xl bg-accent/10 flex items-center justify-center flex-shrink-0">
+                  <ClipboardList size={18} className="text-accent sm:hidden" />
+                  <ClipboardList size={22} className="text-accent hidden sm:block" />
                 </div>
                 <div className="flex-1 min-w-0">
                   <p
-                    className="font-semibold text-foreground text-sm truncate"
+                    className="font-semibold text-foreground text-xs sm:text-sm truncate"
                     style={{ fontFamily: font }}
                   >
                     {lesson.title}
                   </p>
-                  <div className="flex flex-wrap items-center gap-3 mt-0.5">
+                  <div className="flex flex-wrap items-center gap-2 sm:gap-3 mt-0.5">
                     {lesson.exam?.durationMinutes && (
-                      <span className="text-xs text-muted-foreground flex items-center gap-1">
-                        <Clock size={11} />
+                      <span className="text-[10px] sm:text-xs text-muted-foreground flex items-center gap-1">
+                        <Clock size={10} />
                         {lesson.exam.durationMinutes} {t.minutes}
                       </span>
                     )}
-                    <span className="text-xs text-muted-foreground flex items-center gap-1">
-                      <Award size={11} />
+                    <span className="text-[10px] sm:text-xs text-muted-foreground flex items-center gap-1">
+                      <Award size={10} />
                       {lesson.exam?.passingScore ?? 50}% {t.passing}
                     </span>
-                    <span className="text-xs text-muted-foreground flex items-center gap-1">
-                      <HelpCircle size={11} />
+                    <span className="text-[10px] sm:text-xs text-muted-foreground flex items-center gap-1">
+                      <HelpCircle size={10} />
                       {lesson.exam?.examQuestions.length ?? 0} {t.questions}
                     </span>
                   </div>
                 </div>
+
+                <ScheduleBadge
+                  scheduledAt={lesson.exam?.scheduledAt}
+                  t={t}
+                  lang={lang}
+                  font={font}
+                />
+
                 <span
                   className={`hidden sm:flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold ${lesson.isVisible ? 'bg-green-500/10 text-green-600' : 'bg-muted text-muted-foreground'}`}
                   style={{ fontFamily: font }}
@@ -1631,7 +1824,7 @@ function ExamsTab({
                     </>
                   )}
                 </span>
-                <div className="flex items-center gap-1 flex-shrink-0">
+                <div className="flex items-center gap-0.5 sm:gap-1 flex-shrink-0">
                   <button
                     onClick={() => {
                       setManageLesson(lesson);
@@ -1640,27 +1833,27 @@ function ExamsTab({
                       setMarkDrafts({});
                     }}
                     title={t.manageQuestions}
-                    className="p-1.5 rounded-lg text-muted-foreground hover:bg-secondary/10 hover:text-secondary transition-colors"
+                    className="p-1 sm:p-1.5 rounded-lg text-muted-foreground hover:bg-secondary/10 hover:text-secondary transition-colors"
                   >
-                    <HelpCircle size={14} />
+                    <HelpCircle size={13} />
                   </button>
                   <button
                     onClick={() => openEdit(lesson)}
-                    className="p-1.5 rounded-lg text-muted-foreground hover:bg-primary/10 hover:text-primary transition-colors"
+                    className="p-1 sm:p-1.5 rounded-lg text-muted-foreground hover:bg-primary/10 hover:text-primary transition-colors"
                   >
-                    <Pencil size={14} />
+                    <Pencil size={13} />
                   </button>
                   <button
                     onClick={() => toggleVis(lesson)}
-                    className="p-1.5 rounded-lg text-muted-foreground hover:bg-orange-50 hover:text-orange-500 transition-colors"
+                    className="p-1 sm:p-1.5 rounded-lg text-muted-foreground hover:bg-orange-50 hover:text-orange-500 transition-colors"
                   >
-                    {lesson.isVisible ? <EyeOff size={14} /> : <Eye size={14} />}
+                    {lesson.isVisible ? <EyeOff size={13} /> : <Eye size={13} />}
                   </button>
                   <button
                     onClick={() => setDeleteTarget(lesson)}
-                    className="p-1.5 rounded-lg text-muted-foreground hover:bg-red-50 hover:text-red-500 transition-colors"
+                    className="p-1 sm:p-1.5 rounded-lg text-muted-foreground hover:bg-red-50 hover:text-red-500 transition-colors"
                   >
-                    <Trash2 size={14} />
+                    <Trash2 size={13} />
                   </button>
                 </div>
               </div>
@@ -1669,13 +1862,14 @@ function ExamsTab({
         )}
       </div>
 
+      {/* ── Add / Edit Exam Modal ── */}
       {showModal && (
         <Modal
           onClose={() => setShowModal(false)}
           title={editLesson ? t.editExam : t.addExam}
           font={font}
         >
-          <div className="flex flex-col gap-3">
+          <div className="flex flex-col gap-3 sm:gap-4">
             <Field label={t.examName} font={font}>
               <Inp
                 value={form.title}
@@ -1684,6 +1878,7 @@ function ExamsTab({
                 dir={isRtl ? 'rtl' : 'ltr'}
               />
             </Field>
+
             <Field label={t.durationMinutes} font={font}>
               <Inp
                 type="number"
@@ -1694,6 +1889,7 @@ function ExamsTab({
                 dir="ltr"
               />
             </Field>
+
             <Field label={t.passingScore} font={font}>
               <Inp
                 type="number"
@@ -1704,7 +1900,71 @@ function ExamsTab({
                 dir="ltr"
               />
             </Field>
+
+            <Field label={t.scheduleLabel} hint={t.scheduleHint} font={font}>
+              <div className="grid grid-cols-2 gap-1.5 sm:gap-2 mb-1.5 sm:mb-2">
+                <button
+                  type="button"
+                  onClick={() => setScheduledValue(null)}
+                  className={`flex items-center justify-center gap-1.5 py-1.5 sm:py-2 rounded-xl border text-[10px] sm:text-xs font-bold transition-all ${scheduledValue === null ? 'border-primary bg-primary/10 text-primary' : 'border-border text-muted-foreground hover:border-primary/30'}`}
+                  style={{ fontFamily: font }}
+                >
+                  <CalendarCheck2 size={13} />
+                  {t.scheduleNow}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (scheduledValue === null) {
+                      const tomorrow = new Date();
+                      tomorrow.setDate(tomorrow.getDate() + 1);
+                      tomorrow.setHours(8, 0, 0, 0);
+                      setScheduledValue(toDatetimeLocal(tomorrow));
+                    }
+                  }}
+                  className={`flex items-center justify-center gap-1.5 py-1.5 sm:py-2 rounded-xl border text-[10px] sm:text-xs font-bold transition-all ${scheduledValue !== null ? 'border-primary bg-primary/10 text-primary' : 'border-border text-muted-foreground hover:border-primary/30'}`}
+                  style={{ fontFamily: font }}
+                >
+                  <CalendarClock size={13} />
+                  {t.scheduleLater}
+                </button>
+              </div>
+
+              {scheduledValue !== null && (
+                <div className="flex flex-col gap-2">
+                  <input
+                    type="datetime-local"
+                    value={scheduledValue}
+                    min={minDatetimeLocal}
+                    onChange={(e) => setScheduledValue(e.target.value || null)}
+                    className="w-full px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-xl border border-border bg-background text-foreground text-xs sm:text-sm outline-none focus:ring-2 focus:ring-primary/30 transition-all"
+                    dir="ltr"
+                  />
+                  {scheduledValue && (
+                    <div className="flex items-center justify-between flex-wrap gap-1.5">
+                      <p
+                        className="text-[10px] sm:text-xs text-primary font-semibold flex items-center gap-1"
+                        style={{ fontFamily: font }}
+                      >
+                        <CalendarClock size={11} />
+                        {formatScheduledAt(new Date(scheduledValue).toISOString(), lang)}
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => setScheduledValue(null)}
+                        className="text-[10px] sm:text-xs text-muted-foreground hover:text-red-500 flex items-center gap-1 transition-colors"
+                        style={{ fontFamily: font }}
+                      >
+                        <CalendarX2 size={11} />
+                        {t.clearSchedule}
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+            </Field>
           </div>
+
           <ActionButtons
             onClose={() => setShowModal(false)}
             onSave={handleSave}
@@ -1715,23 +1975,27 @@ function ExamsTab({
         </Modal>
       )}
 
+      {/* ── Delete Modal ── */}
       {deleteTarget && (
         <Modal onClose={() => setDeleteTarget(null)} title={t.delete} font={font}>
-          <p className="text-sm text-muted-foreground mb-6" style={{ fontFamily: font }}>
+          <p
+            className="text-xs sm:text-sm text-muted-foreground mb-4 sm:mb-6"
+            style={{ fontFamily: font }}
+          >
             {t.confirmDelete}{' '}
             <span className="font-bold text-foreground">{deleteTarget.title}</span>؟
           </p>
           <div className="flex items-center justify-end gap-2">
             <button
               onClick={() => setDeleteTarget(null)}
-              className="px-4 py-2 rounded-xl border border-border text-sm font-semibold text-muted-foreground hover:bg-muted transition-all"
+              className="px-3 sm:px-4 py-1.5 sm:py-2 rounded-xl border border-border text-xs sm:text-sm font-semibold text-muted-foreground hover:bg-muted transition-all"
               style={{ fontFamily: font }}
             >
               {t.cancel}
             </button>
             <button
               onClick={handleDelete}
-              className="px-5 py-2 rounded-xl bg-red-500 hover:bg-red-600 text-white text-sm font-bold transition-all"
+              className="px-4 sm:px-5 py-1.5 sm:py-2 rounded-xl bg-red-500 hover:bg-red-600 text-white text-xs sm:text-sm font-bold transition-all"
               style={{ fontFamily: font }}
             >
               {t.confirmDeleteBtn}
@@ -1740,6 +2004,7 @@ function ExamsTab({
         </Modal>
       )}
 
+      {/* ── Manage Questions Modal ── */}
       {currentManage && (
         <Modal
           onClose={() => setManageLesson(null)}
@@ -1747,17 +2012,17 @@ function ExamsTab({
           font={font}
           wide
         >
-          <div className="flex flex-col gap-5">
+          <div className="flex flex-col gap-4 sm:gap-5">
             <div>
               <h3
-                className="text-sm font-bold text-foreground mb-2 flex items-center gap-2 flex-wrap"
+                className="text-xs sm:text-sm font-bold text-foreground mb-1.5 sm:mb-2 flex items-center gap-1.5 sm:gap-2 flex-wrap"
                 style={{ fontFamily: font }}
               >
-                <ClipboardList size={14} className="text-accent" />
+                <ClipboardList size={13} className="text-accent" />
                 {t.examHasQuestions} ({currentManage.exam?.examQuestions.length ?? 0})
                 {!!currentManage.exam?.examQuestions.length && (
                   <span
-                    className="text-xs px-2 py-0.5 rounded-full bg-accent/10 text-accent font-bold"
+                    className="text-[10px] sm:text-xs px-1.5 sm:px-2 py-0.5 rounded-full bg-accent/10 text-accent font-bold"
                     style={{ fontFamily: font }}
                   >
                     {t.totalMarks}:{' '}
@@ -1766,9 +2031,15 @@ function ExamsTab({
                 )}
               </h3>
               {!currentManage.exam?.examQuestions.length ? (
-                <div className="rounded-xl border border-dashed border-border py-6 text-center">
-                  <AlertCircle size={24} className="text-muted-foreground/30 mx-auto mb-2" />
-                  <p className="text-xs text-muted-foreground" style={{ fontFamily: font }}>
+                <div className="rounded-xl border border-dashed border-border py-5 sm:py-6 text-center">
+                  <AlertCircle
+                    size={20}
+                    className="text-muted-foreground/30 mx-auto mb-1.5 sm:mb-2"
+                  />
+                  <p
+                    className="text-[10px] sm:text-xs text-muted-foreground"
+                    style={{ fontFamily: font }}
+                  >
                     {t.noExamQuestions}
                   </p>
                 </div>
@@ -1777,7 +2048,7 @@ function ExamsTab({
                   {currentManage.exam!.examQuestions.map((eq, idx) => (
                     <div
                       key={eq.id}
-                      className="flex items-center gap-3 px-4 py-3 bg-card hover:bg-muted/10 transition-colors"
+                      className="flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-2.5 sm:py-3 bg-card hover:bg-muted/10 transition-colors"
                     >
                       <div className="flex flex-col gap-0.5 flex-shrink-0">
                         <button
@@ -1785,31 +2056,31 @@ function ExamsTab({
                           disabled={idx === 0}
                           className="p-0.5 text-muted-foreground hover:text-foreground disabled:opacity-20"
                         >
-                          <ChevronUp size={12} />
+                          <ChevronUp size={11} />
                         </button>
                         <button
                           onClick={() => handleReorderEQ(currentManage.id, eq.id, 'down')}
                           disabled={idx === currentManage.exam!.examQuestions.length - 1}
                           className="p-0.5 text-muted-foreground hover:text-foreground disabled:opacity-20"
                         >
-                          <ChevronDown size={12} />
+                          <ChevronDown size={11} />
                         </button>
                       </div>
-                      <span className="text-xs font-bold text-muted-foreground w-4">{idx + 1}</span>
+                      <span className="text-[10px] sm:text-xs font-bold text-muted-foreground w-3.5 sm:w-4">
+                        {idx + 1}
+                      </span>
                       <div className="flex-1 min-w-0">
                         <p
-                          className="text-xs font-semibold text-foreground truncate"
+                          className="text-[10px] sm:text-xs font-semibold text-foreground truncate"
                           style={{ fontFamily: font }}
                         >
                           {eq.question.text}
                         </p>
-                        <span className="text-xs text-muted-foreground">
+                        <span className="text-[10px] sm:text-xs text-muted-foreground">
                           {eq.question.lessonTag}
                         </span>
                       </div>
                       <QTypeBadge type={eq.question.type} t={t} font={font} />
-
-                      {/* Mark input — defaults to 1, editable inline, committed on blur */}
                       <div className="flex items-center gap-1 flex-shrink-0">
                         <input
                           type="number"
@@ -1830,23 +2101,22 @@ function ExamsTab({
                               handleUpdateMark(currentManage.id, eq.id, safe);
                             }
                           }}
-                          className="w-14 text-xs text-center py-1 rounded-lg border border-border bg-background text-foreground outline-none focus:ring-2 focus:ring-primary/30"
+                          className="w-12 sm:w-14 text-[10px] sm:text-xs text-center py-1 rounded-lg border border-border bg-background text-foreground outline-none focus:ring-2 focus:ring-primary/30"
                           title={t.markLabel}
                           style={{ fontFamily: font }}
                         />
                         <span
-                          className="text-xs text-muted-foreground"
+                          className="text-[10px] sm:text-xs text-muted-foreground"
                           style={{ fontFamily: font }}
                         >
                           {t.markUnit}
                         </span>
                       </div>
-
                       <button
                         onClick={() => handleRemoveEQ(currentManage.id, eq.id)}
-                        className="p-1.5 rounded-lg text-muted-foreground hover:bg-red-50 hover:text-red-500 transition-colors flex-shrink-0"
+                        className="p-1 sm:p-1.5 rounded-lg text-muted-foreground hover:bg-red-50 hover:text-red-500 transition-colors flex-shrink-0"
                       >
-                        <X size={13} />
+                        <X size={12} />
                       </button>
                     </div>
                   ))}
@@ -1855,23 +2125,23 @@ function ExamsTab({
             </div>
             <div>
               <h3
-                className="text-sm font-bold text-foreground mb-1 flex items-center gap-2"
+                className="text-xs sm:text-sm font-bold text-foreground mb-1 flex items-center gap-1.5 sm:gap-2"
                 style={{ fontFamily: font }}
               >
-                <HelpCircle size={14} className="text-secondary" />
+                <HelpCircle size={13} className="text-secondary" />
                 {t.addFromBank}
               </h3>
               <p
-                className="text-xs text-muted-foreground mb-2 flex items-center gap-1"
+                className="text-[10px] sm:text-xs text-muted-foreground mb-1.5 sm:mb-2 flex items-center gap-1"
                 style={{ fontFamily: font }}
               >
-                <FileText size={11} className="text-amber-500" /> {t.essayExcluded}
+                <FileText size={10} className="text-amber-500" /> {t.essayExcluded}
               </p>
-              <div className="flex items-center gap-2 mb-2">
+              <div className="flex items-center gap-1.5 sm:gap-2 mb-1.5 sm:mb-2 flex-wrap">
                 <select
                   value={bankFilter}
                   onChange={(e) => setBankFilter(e.target.value)}
-                  className="text-xs py-1.5 px-3 rounded-xl border border-border bg-background text-foreground outline-none flex-1"
+                  className="text-[10px] sm:text-xs py-1 sm:py-1.5 px-2 sm:px-3 rounded-xl border border-border bg-background text-foreground outline-none flex-1"
                   style={{ fontFamily: font }}
                 >
                   <option value="">{t.allTags}</option>
@@ -1885,23 +2155,23 @@ function ExamsTab({
                   <button
                     onClick={handleAddFromBank}
                     disabled={addingQs}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl gradient-primary text-white text-xs font-bold shadow hover:opacity-90 active:scale-95 transition-all"
+                    className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-xl gradient-primary text-white text-[10px] sm:text-xs font-bold shadow hover:opacity-90 active:scale-95 transition-all"
                     style={{ fontFamily: font }}
                   >
-                    {addingQs ? <Loader2 size={13} className="animate-spin" /> : <Plus size={13} />}
+                    {addingQs ? <Loader2 size={12} className="animate-spin" /> : <Plus size={12} />}
                     {t.addSelected} ({selectedBankIds.size})
                   </button>
                 )}
               </div>
               {filteredBank.length === 0 ? (
                 <p
-                  className="text-xs text-muted-foreground py-4 text-center"
+                  className="text-[10px] sm:text-xs text-muted-foreground py-3 sm:py-4 text-center"
                   style={{ fontFamily: font }}
                 >
                   {t.noQuestions}
                 </p>
               ) : (
-                <div className="rounded-xl border border-border overflow-hidden divide-y divide-border max-h-60 overflow-y-auto">
+                <div className="rounded-xl border border-border overflow-hidden divide-y divide-border max-h-52 sm:max-h-60 overflow-y-auto">
                   {filteredBank.map((q) => {
                     const selected = selectedBankIds.has(q.id);
                     return (
@@ -1914,21 +2184,23 @@ function ExamsTab({
                             return next;
                           })
                         }
-                        className={`w-full flex items-center gap-3 px-4 py-3 text-left transition-colors ${selected ? 'bg-primary/5' : 'hover:bg-muted/20'}`}
+                        className={`w-full flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-2.5 sm:py-3 text-left transition-colors ${selected ? 'bg-primary/5' : 'hover:bg-muted/20'}`}
                       >
                         <div
-                          className={`w-4 h-4 rounded border-2 flex-shrink-0 flex items-center justify-center transition-all ${selected ? 'border-primary bg-primary' : 'border-border'}`}
+                          className={`w-3.5 h-3.5 sm:w-4 sm:h-4 rounded border-2 flex-shrink-0 flex items-center justify-center transition-all ${selected ? 'border-primary bg-primary' : 'border-border'}`}
                         >
-                          {selected && <Check size={10} className="text-white" />}
+                          {selected && <Check size={9} className="text-white" />}
                         </div>
                         <div className="flex-1 min-w-0 text-start">
                           <p
-                            className="text-xs font-semibold text-foreground truncate"
+                            className="text-[10px] sm:text-xs font-semibold text-foreground truncate"
                             style={{ fontFamily: font }}
                           >
                             {q.text}
                           </p>
-                          <span className="text-xs text-muted-foreground">{q.lessonTag}</span>
+                          <span className="text-[10px] sm:text-xs text-muted-foreground">
+                            {q.lessonTag}
+                          </span>
                         </div>
                         <QTypeBadge type={q.type} t={t} font={font} />
                       </button>
@@ -1938,10 +2210,10 @@ function ExamsTab({
               )}
             </div>
           </div>
-          <div className="flex justify-end pt-4 border-t border-border mt-4">
+          <div className="flex justify-end pt-3 sm:pt-4 border-t border-border mt-3 sm:mt-4">
             <button
               onClick={() => setManageLesson(null)}
-              className="px-4 py-2 rounded-xl border border-border text-sm font-semibold text-muted-foreground hover:bg-muted transition-all"
+              className="px-3 sm:px-4 py-1.5 sm:py-2 rounded-xl border border-border text-xs sm:text-sm font-semibold text-muted-foreground hover:bg-muted transition-all"
               style={{ fontFamily: font }}
             >
               {t.cancel}

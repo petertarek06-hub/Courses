@@ -18,40 +18,37 @@ import { toast } from 'sonner';
 import { useAdminLang } from '../Adminshell';
 
 // ── Types ──────────────────────────────────────────────────────
-interface Instructor {
+interface Teacher {
   id: number;
   fullName: string;
   phone: string;
 }
-
 interface Course {
   id: number;
-  name: string; // ✅ was: nameAr, nameEn
-  description: string | null; // ✅ was: descriptionAr, descriptionEn
-  subject: string; // ✅ was: subjectAr, subjectEn
+  name: string;
+  description: string | null;
+  subject: string;
   academicYear: string;
   price: number;
   isVisible: boolean;
   createdAt: string;
-  instructor: Instructor;
+  teacher: Teacher;
 }
-
 type CourseForm = {
   name: string;
   description: string;
   subject: string;
   academicYear: string;
   price: string;
-  instructorId: string;
+  teacherId: string;
 };
-
 const emptyForm: CourseForm = {
   name: '',
   description: '',
   subject: '',
   academicYear: '',
   price: '0',
-  instructorId: '',
+  teacherId: '',
 };
 
 // ── Academic years ─────────────────────────────────────────────
@@ -116,7 +113,6 @@ const academicYears = {
   ],
 };
 
-// ── Grade label map ────────────────────────────────────────────
 const gradeLabelMap: Record<string, { ar: string; en: string }> = {
   'grade-1': { ar: 'الصف الأول الابتدائي', en: 'Grade 1' },
   'grade-2': { ar: 'الصف الثاني الابتدائي', en: 'Grade 2' },
@@ -140,7 +136,7 @@ const content = {
     addCourse: 'إضافة كورس',
     name: 'اسم الكورس',
     subject: 'المادة',
-    instructor: 'المدرس',
+    teacher: 'المدرس',
     grade: 'الصف',
     price: 'السعر',
     status: 'الحالة',
@@ -164,8 +160,8 @@ const content = {
     academicYear: 'الصف الدراسي',
     selectYear: 'اختر الصف',
     priceLabel: 'السعر (ج.م)',
-    selectInstructor: 'اختر المدرس',
-    instructorLabel: 'المدرس',
+    selectTeacher: 'اختر المدرس',
+    teacherLabel: 'المدرس',
     save: 'حفظ',
     cancel: 'إلغاء',
     addedSuccess: 'تمت إضافة الكورس بنجاح',
@@ -176,7 +172,7 @@ const content = {
     confirmDelete: 'هل أنت متأكد من حذف كورس',
     confirmDeleteBtn: 'حذف نهائيًا',
     missingFields: 'يرجى تعبئة جميع الحقول المطلوبة',
-    noInstructors: 'لا يوجد مدرسون — أضف مدرسًا أولاً',
+    noTeachers: 'لا يوجد مدرسون — أضف مدرسًا أولاً',
   },
   en: {
     title: 'Courses',
@@ -184,7 +180,7 @@ const content = {
     addCourse: 'Add Course',
     name: 'Course Name',
     subject: 'Subject',
-    instructor: 'Instructor',
+    teacher: 'Teacher',
     grade: 'Grade',
     price: 'Price',
     status: 'Status',
@@ -208,8 +204,8 @@ const content = {
     academicYear: 'Academic Year',
     selectYear: 'Select grade',
     priceLabel: 'Price (EGP)',
-    selectInstructor: 'Select Instructor',
-    instructorLabel: 'Instructor',
+    selectTeacher: 'Select Teacher',
+    teacherLabel: 'Teacher',
     save: 'Save',
     cancel: 'Cancel',
     addedSuccess: 'Course added successfully',
@@ -220,7 +216,7 @@ const content = {
     confirmDelete: 'Are you sure you want to delete',
     confirmDeleteBtn: 'Delete Permanently',
     missingFields: 'Please fill all required fields',
-    noInstructors: 'No instructors found — add an instructor first',
+    noTeachers: 'No teachers found — add a teacher first',
   },
 };
 
@@ -233,16 +229,14 @@ export default function AdminCoursesPage() {
   const years = academicYears[lang];
 
   const [courses, setCourses] = useState<Course[]>([]);
-  const [instructors, setInstructors] = useState<Instructor[]>([]);
+  const [teachers, setTeachers] = useState<Teacher[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [search, setSearch] = useState('');
-
   const [showModal, setShowModal] = useState(false);
   const [editCourse, setEditCourse] = useState<Course | null>(null);
   const [form, setForm] = useState<CourseForm>(emptyForm);
   const [saving, setSaving] = useState(false);
-
   const [deleteCourse, setDeleteCourse] = useState<Course | null>(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
 
@@ -263,20 +257,18 @@ export default function AdminCoursesPage() {
       .catch(() => setError(true))
       .finally(() => setLoading(false));
   };
-
-  const fetchInstructors = () => {
-    fetch('/api/admin/instructors')
+  const fetchTeachers = () => {
+    fetch('/api/admin/teachers')
       .then((r) => (r.ok ? r.json() : []))
-      .then(setInstructors)
+      .then(setTeachers)
       .catch(() => {});
   };
 
   useEffect(() => {
     fetchCourses();
-    fetchInstructors();
+    fetchTeachers();
   }, []);
 
-  // ✅ Fixed: was c.nameAr/nameEn/subjectAr/subjectEn → c.name/subject
   const filtered = courses.filter((c) => {
     const q = search.toLowerCase();
     return c.name.toLowerCase().includes(q) || c.subject.toLowerCase().includes(q);
@@ -287,8 +279,6 @@ export default function AdminCoursesPage() {
     setForm(emptyForm);
     setShowModal(true);
   };
-
-  // ✅ Fixed: was course.nameAr/descriptionAr/subjectAr → course.name/description/subject
   const openEdit = (course: Course) => {
     setEditCourse(course);
     setForm({
@@ -297,13 +287,13 @@ export default function AdminCoursesPage() {
       subject: course.subject,
       academicYear: course.academicYear,
       price: String(course.price),
-      instructorId: String(course.instructor.id),
+      teacherId: String(course.teacher.id),
     });
     setShowModal(true);
   };
 
   const handleSave = async () => {
-    if (!form.name || !form.subject || !form.academicYear || !form.instructorId) {
+    if (!form.name || !form.subject || !form.academicYear || !form.teacherId) {
       toast.error(t.missingFields);
       return;
     }
@@ -365,43 +355,51 @@ export default function AdminCoursesPage() {
 
   const f = (key: keyof CourseForm, value: string) =>
     setForm((prev) => ({ ...prev, [key]: value }));
-
   const gradeLabel = (key: string) =>
     gradeLabelMap[key] ? (isRtl ? gradeLabelMap[key].ar : gradeLabelMap[key].en) : key;
 
   return (
     <>
       {/* Header */}
-      <div className="flex items-center justify-between mb-6 gap-4 flex-wrap">
-        <h1 className="text-2xl font-extrabold text-foreground" style={{ fontFamily: font }}>
+      <div className="flex items-center justify-between mb-4 sm:mb-6 gap-3 flex-wrap">
+        <h1
+          className="text-xl sm:text-2xl font-extrabold text-foreground"
+          style={{ fontFamily: font }}
+        >
           {t.title}
         </h1>
         <button
           onClick={openAdd}
-          className="flex items-center gap-2 px-4 py-2.5 rounded-xl gradient-primary text-white text-sm font-bold shadow-md hover:opacity-90 active:scale-95 transition-all"
+          className="flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl gradient-primary text-white text-xs sm:text-sm font-bold shadow-md hover:opacity-90 active:scale-95 transition-all"
           style={{ fontFamily: font }}
         >
-          <Plus size={16} />
+          <Plus size={14} className="sm:hidden" />
+          <Plus size={16} className="hidden sm:block" />
           {t.addCourse}
         </button>
       </div>
 
       {/* Search */}
-      <div className="relative mb-4">
+      <div className="relative mb-3 sm:mb-4">
+        <Search
+          size={14}
+          className="absolute top-1/2 -translate-y-1/2 text-muted-foreground sm:hidden"
+          style={{ [isRtl ? 'right' : 'left']: '12px' }}
+        />
         <Search
           size={16}
-          className="absolute top-1/2 -translate-y-1/2 text-muted-foreground"
+          className="absolute top-1/2 -translate-y-1/2 text-muted-foreground hidden sm:block"
           style={{ [isRtl ? 'right' : 'left']: '14px' }}
         />
         <input
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder={t.search}
-          className="w-full max-w-sm py-2.5 rounded-xl border border-border bg-card text-sm text-foreground outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary transition-all"
+          className="w-full max-w-sm py-2 sm:py-2.5 rounded-xl border border-border bg-card text-xs sm:text-sm text-foreground outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary transition-all"
           style={{
             fontFamily: font,
-            [isRtl ? 'paddingRight' : 'paddingLeft']: '40px',
-            [isRtl ? 'paddingLeft' : 'paddingRight']: '16px',
+            [isRtl ? 'paddingRight' : 'paddingLeft']: '36px',
+            [isRtl ? 'paddingLeft' : 'paddingRight']: '14px',
           }}
         />
       </div>
@@ -409,14 +407,14 @@ export default function AdminCoursesPage() {
       {/* Table */}
       <div className="bg-card rounded-2xl border border-border card-shadow overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full text-sm border-collapse">
+          <table className="w-full text-xs sm:text-sm border-collapse">
             <thead className="bg-muted">
               <tr>
-                {[t.name, t.subject, t.instructor, t.grade, t.price, t.status, t.actions].map(
+                {[t.name, t.subject, t.teacher, t.grade, t.price, t.status, t.actions].map(
                   (col, i, arr) => (
                     <th
                       key={col}
-                      className={`px-4 py-3 text-center border-b border-border text-xs font-bold text-muted-foreground uppercase tracking-wide whitespace-nowrap ${i < arr.length - 1 ? (isRtl ? 'border-l' : 'border-r') : ''}`}
+                      className={`px-2 sm:px-4 py-2 sm:py-3 text-center border-b border-border text-[10px] sm:text-xs font-bold text-muted-foreground uppercase tracking-wide whitespace-nowrap ${i < arr.length - 1 ? (isRtl ? 'border-l' : 'border-r') : ''}`}
                       style={{ fontFamily: font }}
                     >
                       {col}
@@ -428,7 +426,7 @@ export default function AdminCoursesPage() {
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={7} className="py-12 text-center">
+                  <td colSpan={7} className="py-10 sm:py-12 text-center">
                     <Loader2 size={24} className="animate-spin text-primary mx-auto" />
                   </td>
                 </tr>
@@ -436,7 +434,7 @@ export default function AdminCoursesPage() {
                 <tr>
                   <td
                     colSpan={7}
-                    className="py-10 text-center text-red-500 text-sm"
+                    className="py-8 sm:py-10 text-center text-red-500 text-xs sm:text-sm"
                     style={{ fontFamily: font }}
                   >
                     {t.errorLoading}
@@ -444,9 +442,13 @@ export default function AdminCoursesPage() {
                 </tr>
               ) : filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="py-16 text-center" style={{ fontFamily: font }}>
-                    <BookOpen size={40} className="mx-auto text-muted-foreground/30 mb-3" />
-                    <p className="text-muted-foreground">{t.noData}</p>
+                  <td
+                    colSpan={7}
+                    className="py-10 sm:py-16 text-center"
+                    style={{ fontFamily: font }}
+                  >
+                    <BookOpen size={36} className="mx-auto text-muted-foreground/30 mb-2 sm:mb-3" />
+                    <p className="text-muted-foreground text-xs sm:text-sm">{t.noData}</p>
                   </td>
                 </tr>
               ) : (
@@ -455,43 +457,39 @@ export default function AdminCoursesPage() {
                     key={course.id}
                     className="odd:bg-background even:bg-muted/10 hover:bg-muted/30 transition-colors"
                   >
-                    {/* Name — ✅ was course.nameAr */}
+                    {/* Name */}
                     <td
-                      className={`px-4 py-4 text-center align-middle border-b border-border ${getBorderDirection()}`}
+                      className={`px-2 sm:px-4 py-2 sm:py-3 text-center align-middle border-b border-border ${getBorderDirection()}`}
                       style={{ fontFamily: font }}
                     >
                       <p className="font-semibold text-foreground">{course.name}</p>
                     </td>
-
-                    {/* Subject — ✅ was course.subjectAr */}
+                    {/* Subject */}
                     <td
-                      className={`px-4 py-4 text-center align-middle border-b border-border ${getBorderDirection()}`}
+                      className={`px-2 sm:px-4 py-2 sm:py-3 text-center align-middle border-b border-border ${getBorderDirection()}`}
                       style={{ fontFamily: font }}
                     >
-                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-primary/10 text-primary">
+                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] sm:text-xs font-bold bg-primary/10 text-primary">
                         {course.subject}
                       </span>
                     </td>
-
-                    {/* Instructor */}
+                    {/* Teacher */}
                     <td
-                      className={`px-4 py-4 text-center align-middle border-b border-border ${getBorderDirection()} text-muted-foreground`}
+                      className={`px-2 sm:px-4 py-2 sm:py-3 text-center align-middle border-b border-border ${getBorderDirection()} text-muted-foreground`}
                       style={{ fontFamily: font }}
                     >
-                      {course.instructor.fullName}
+                      {course.teacher.fullName}
                     </td>
-
                     {/* Grade */}
                     <td
-                      className={`px-4 py-4 text-center align-middle border-b border-border ${getBorderDirection()} text-muted-foreground text-xs whitespace-nowrap`}
+                      className={`px-2 sm:px-4 py-2 sm:py-3 text-center align-middle border-b border-border ${getBorderDirection()} text-muted-foreground text-[10px] sm:text-xs whitespace-nowrap`}
                       style={{ fontFamily: font }}
                     >
                       {gradeLabel(course.academicYear)}
                     </td>
-
                     {/* Price */}
                     <td
-                      className={`px-4 py-4 text-center align-middle border-b border-border ${getBorderDirection()} font-semibold text-foreground`}
+                      className={`px-2 sm:px-4 py-2 sm:py-3 text-center align-middle border-b border-border ${getBorderDirection()} font-semibold text-foreground`}
                       dir="ltr"
                     >
                       {course.price === 0 ? (
@@ -502,59 +500,70 @@ export default function AdminCoursesPage() {
                         `${course.price} ${t.egp}`
                       )}
                     </td>
-
                     {/* Status */}
                     <td
-                      className={`px-4 py-4 text-center align-middle border-b border-border ${getBorderDirection()}`}
+                      className={`px-2 sm:px-4 py-2 sm:py-3 text-center align-middle border-b border-border ${getBorderDirection()}`}
                     >
                       <span
-                        className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold ${course.isVisible ? 'bg-green-500/10 text-green-600' : 'bg-muted text-muted-foreground'}`}
+                        className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] sm:text-xs font-bold ${course.isVisible ? 'bg-green-500/10 text-green-600' : 'bg-muted text-muted-foreground'}`}
                         style={{ fontFamily: font }}
                       >
                         {course.isVisible ? (
                           <>
-                            <Eye size={11} />
+                            <Eye size={10} />
                             {t.visible}
                           </>
                         ) : (
                           <>
-                            <EyeOff size={11} />
+                            <EyeOff size={10} />
                             {t.hidden}
                           </>
                         )}
                       </span>
                     </td>
-
                     {/* Actions */}
-                    <td className="px-4 py-4 text-center align-middle border-b border-border">
-                      <div className="flex items-center justify-center gap-1.5">
+                    <td className="px-2 sm:px-4 py-2 sm:py-3 text-center align-middle border-b border-border">
+                      <div className="flex items-center justify-center gap-1 sm:gap-1.5">
                         <button
                           onClick={() => router.push(`/admin/courses/${course.id}/lessons`)}
                           title={t.manageContent}
                           className="p-1.5 rounded-lg text-muted-foreground hover:bg-secondary/10 hover:text-secondary transition-colors"
                         >
-                          <ListVideo size={15} />
+                          <ListVideo size={13} className="sm:hidden" />
+                          <ListVideo size={15} className="hidden sm:block" />
                         </button>
                         <button
                           onClick={() => openEdit(course)}
                           title={t.edit}
                           className="p-1.5 rounded-lg text-muted-foreground hover:bg-primary/10 hover:text-primary transition-colors"
                         >
-                          <Pencil size={15} />
+                          <Pencil size={13} className="sm:hidden" />
+                          <Pencil size={15} className="hidden sm:block" />
                         </button>
                         <button
                           onClick={() => handleToggleVisibility(course)}
                           title={course.isVisible ? t.hide : t.show}
                           className={`p-1.5 rounded-lg transition-colors ${course.isVisible ? 'text-muted-foreground hover:bg-orange-50 hover:text-orange-500' : 'text-muted-foreground hover:bg-green-50 hover:text-green-500'}`}
                         >
-                          {course.isVisible ? <EyeOff size={15} /> : <Eye size={15} />}
+                          {course.isVisible ? (
+                            <>
+                              <EyeOff size={13} className="sm:hidden" />
+                              <EyeOff size={15} className="hidden sm:block" />
+                            </>
+                          ) : (
+                            <>
+                              <Eye size={13} className="sm:hidden" />
+                              <Eye size={15} className="hidden sm:block" />
+                            </>
+                          )}
                         </button>
                         <button
                           onClick={() => setDeleteCourse(course)}
                           title={t.delete}
                           className="p-1.5 rounded-lg text-muted-foreground hover:bg-red-50 hover:text-red-500 transition-colors"
                         >
-                          <Trash2 size={15} />
+                          <Trash2 size={13} className="sm:hidden" />
+                          <Trash2 size={15} className="hidden sm:block" />
                         </button>
                       </div>
                     </td>
@@ -574,7 +583,7 @@ export default function AdminCoursesPage() {
           font={font}
           isRtl={isRtl}
         >
-          <div className="flex flex-col gap-3 max-h-[65vh] overflow-y-auto pe-1">
+          <div className="flex flex-col gap-2.5 sm:gap-3">
             <Field label={t.nameLabel} font={font}>
               <input
                 value={form.name}
@@ -610,18 +619,18 @@ export default function AdminCoursesPage() {
                 ))}
               </select>
             </Field>
-            <Field label={t.instructorLabel} font={font}>
+            <Field label={t.teacherLabel} font={font}>
               <select
-                value={form.instructorId}
-                onChange={(e) => f('instructorId', e.target.value)}
+                value={form.teacherId}
+                onChange={(e) => f('teacherId', e.target.value)}
                 className="input-field"
                 style={{ fontFamily: font }}
               >
-                <option value="">{t.selectInstructor}</option>
-                {instructors.length === 0 ? (
-                  <option disabled>{t.noInstructors}</option>
+                <option value="">{t.selectTeacher}</option>
+                {teachers.length === 0 ? (
+                  <option disabled>{t.noTeachers}</option>
                 ) : (
-                  instructors.map((ins) => (
+                  teachers.map((ins) => (
                     <option key={ins.id} value={ins.id}>
                       {ins.fullName}
                     </option>
@@ -649,10 +658,10 @@ export default function AdminCoursesPage() {
               />
             </Field>
           </div>
-          <div className="flex items-center justify-end gap-2 mt-5 pt-4 border-t border-border">
+          <div className="flex items-center justify-end gap-2 mt-4 sm:mt-5 pt-3 sm:pt-4 border-t border-border">
             <button
               onClick={() => setShowModal(false)}
-              className="px-4 py-2 rounded-xl border border-border text-sm font-semibold text-muted-foreground hover:bg-muted transition-all"
+              className="px-3 sm:px-4 py-1.5 sm:py-2 rounded-xl border border-border text-xs sm:text-sm font-semibold text-muted-foreground hover:bg-muted transition-all"
               style={{ fontFamily: font }}
             >
               {t.cancel}
@@ -660,10 +669,10 @@ export default function AdminCoursesPage() {
             <button
               onClick={handleSave}
               disabled={saving}
-              className="px-5 py-2 rounded-xl gradient-primary text-white text-sm font-bold shadow hover:opacity-90 active:scale-95 transition-all disabled:opacity-60"
+              className="px-4 sm:px-5 py-1.5 sm:py-2 rounded-xl gradient-primary text-white text-xs sm:text-sm font-bold shadow hover:opacity-90 active:scale-95 transition-all disabled:opacity-60"
               style={{ fontFamily: font }}
             >
-              {saving ? <Loader2 size={16} className="animate-spin" /> : t.save}
+              {saving ? <Loader2 size={14} className="animate-spin" /> : t.save}
             </button>
           </div>
         </Modal>
@@ -673,16 +682,16 @@ export default function AdminCoursesPage() {
       {deleteCourse && (
         <Modal onClose={() => setDeleteCourse(null)} title={t.delete} font={font} isRtl={isRtl}>
           <p
-            className="text-sm text-muted-foreground mb-6 leading-relaxed"
+            className="text-xs sm:text-sm text-muted-foreground mb-4 sm:mb-6 leading-relaxed"
             style={{ fontFamily: font }}
           >
-            {t.confirmDelete} {/* ✅ was deleteCourse.nameAr */}
-            <span className="font-bold text-foreground">{deleteCourse.name}</span>؟
+            {t.confirmDelete} <span className="font-bold text-foreground">{deleteCourse.name}</span>
+            ؟
           </p>
           <div className="flex items-center justify-end gap-2">
             <button
               onClick={() => setDeleteCourse(null)}
-              className="px-4 py-2 rounded-xl border border-border text-sm font-semibold text-muted-foreground hover:bg-muted transition-all"
+              className="px-3 sm:px-4 py-1.5 sm:py-2 rounded-xl border border-border text-xs sm:text-sm font-semibold text-muted-foreground hover:bg-muted transition-all"
               style={{ fontFamily: font }}
             >
               {t.cancel}
@@ -690,10 +699,10 @@ export default function AdminCoursesPage() {
             <button
               onClick={handleDelete}
               disabled={deleteLoading}
-              className="px-5 py-2 rounded-xl bg-red-500 hover:bg-red-600 text-white text-sm font-bold transition-all disabled:opacity-60"
+              className="px-4 sm:px-5 py-1.5 sm:py-2 rounded-xl bg-red-500 hover:bg-red-600 text-white text-xs sm:text-sm font-bold transition-all disabled:opacity-60"
               style={{ fontFamily: font }}
             >
-              {deleteLoading ? <Loader2 size={16} className="animate-spin" /> : t.confirmDeleteBtn}
+              {deleteLoading ? <Loader2 size={14} className="animate-spin" /> : t.confirmDeleteBtn}
             </button>
           </div>
         </Modal>
@@ -717,20 +726,26 @@ function Modal({
   isRtl: boolean;
 }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm animate-fade-in">
-      <div className="bg-card rounded-2xl border border-border card-shadow w-full max-w-lg p-6 relative">
-        <div className="flex items-center justify-between mb-5">
-          <h2 className="text-base font-bold text-foreground" style={{ fontFamily: font }}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/40 backdrop-blur-sm animate-fade-in">
+      <div className="bg-card rounded-2xl border border-border card-shadow w-full max-w-lg relative flex flex-col max-h-[90vh]">
+        {/* Sticky header */}
+        <div className="flex items-center justify-between px-4 sm:px-6 pt-4 sm:pt-5 pb-3 sm:pb-4 border-b border-border shrink-0">
+          <h2
+            className="text-sm sm:text-base font-bold text-foreground"
+            style={{ fontFamily: font }}
+          >
             {title}
           </h2>
           <button
             onClick={onClose}
             className="p-1.5 rounded-lg text-muted-foreground hover:bg-muted transition-colors"
           >
-            <X size={18} />
+            <X size={16} className="sm:hidden" />
+            <X size={18} className="hidden sm:block" />
           </button>
         </div>
-        {children}
+        {/* Scrollable body */}
+        <div className="overflow-y-auto px-4 sm:px-6 py-4 sm:py-5 flex-1">{children}</div>
       </div>
     </div>
   );
@@ -747,8 +762,11 @@ function Field({
   children: React.ReactNode;
 }) {
   return (
-    <div className="flex flex-col gap-1.5">
-      <label className="text-sm font-semibold text-foreground" style={{ fontFamily: font }}>
+    <div className="flex flex-col gap-1 sm:gap-1.5">
+      <label
+        className="text-xs sm:text-sm font-semibold text-foreground"
+        style={{ fontFamily: font }}
+      >
         {label}
       </label>
       {children}

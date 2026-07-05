@@ -83,8 +83,8 @@ export default function LoginForm({ lang, onSwitchToRegister }: Props) {
         toast.success(t.successMsg);
         if (result.role === 'admin') {
           window.location.href = '/admin';
-        } else if (result.role === 'instructor') {
-          window.location.href = '/instructor-dashboard';
+        } else if (result.role === 'teacher') {
+          window.location.href = '/teacher-dashboard';
         } else {
           window.location.href = '/student-dashboard';
         }

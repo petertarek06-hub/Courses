@@ -76,7 +76,7 @@ interface RawCourse {
   academicYear: string;
   price: number;
   isEnrolled: boolean;
-  instructor: {
+  teacher: {
     id: number;
     fullName: string;
     avatarUrl: string | null;
@@ -111,8 +111,8 @@ function normalise(course: RawCourse): Teacher {
     ar: course.academicYear,
     en: course.academicYear,
   };
-  const whatsapp = course.instructor.whatsappNumber
-    ? `https://wa.me/${course.instructor.whatsappNumber.replace(/\D/g, '')}`
+  const whatsapp = course.teacher.whatsappNumber
+    ? `https://wa.me/${course.teacher.whatsappNumber.replace(/\D/g, '')}`
     : null;
   return {
     id: `course-${course.id}`,
@@ -123,8 +123,8 @@ function normalise(course: RawCourse): Teacher {
     gradeKey: course.academicYear,
     gradeAr: grade.ar,
     gradeEn: grade.en,
-    photo: course.instructor.avatarUrl,
-    photoAlt: course.instructor.fullName,
+    photo: course.teacher.avatarUrl,
+    photoAlt: course.teacher.fullName,
     whatsapp,
     lessons: course._count.lessons,
     students: course._count.enrollments,

@@ -56,7 +56,7 @@ interface Course {
   id: number;
   name: string;
   subject: string;
-  instructor: { id: number; fullName: string; avatarUrl: string | null };
+  teacher: { id: number; fullName: string; avatarUrl: string | null };
   lessons: Lesson[];
 }
 
@@ -72,7 +72,7 @@ const content = {
     lesson: 'الدرس',
     sidebarTitle: 'محتوى الكورس',
     lessons: 'درس',
-    instructor: 'المدرس',
+    teacher: 'المدرس',
     selectLesson: 'اختر درسًا لتبدأ المشاهدة',
     examLesson: 'امتحان',
     examPassing: 'درجة النجاح',
@@ -98,7 +98,7 @@ const content = {
     lesson: 'Lesson',
     sidebarTitle: 'Course Content',
     lessons: 'lessons',
-    instructor: 'Instructor',
+    teacher: 'Teacher',
     selectLesson: 'Select a lesson to start watching',
     examLesson: 'Exam',
     examPassing: 'Passing score',
@@ -576,16 +576,10 @@ export default function StudentCourseLessonsPage({ params }: { params: Promise<{
                   )}
                 </div>
                 <div className="px-4 sm:px-6 py-3 flex items-center gap-2">
-                  <Avatar
-                    url={course.instructor.avatarUrl}
-                    name={course.instructor.fullName}
-                    size={28}
-                  />
+                  <Avatar url={course.teacher.avatarUrl} name={course.teacher.fullName} size={28} />
                   <span className="text-xs text-muted-foreground" style={{ fontFamily: font }}>
-                    {t.instructor}:{' '}
-                    <span className="font-semibold text-foreground">
-                      {course.instructor.fullName}
-                    </span>
+                    {t.teacher}:{' '}
+                    <span className="font-semibold text-foreground">{course.teacher.fullName}</span>
                   </span>
                 </div>
               </>

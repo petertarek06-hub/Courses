@@ -22,7 +22,7 @@ export async function GET() {
         role: true,
         avatarUrl: true,
         academicYear: true,
-        balance: true, // ← always fresh from DB
+        balance: true,
         isActive: true,
         createdAt: true,
       },

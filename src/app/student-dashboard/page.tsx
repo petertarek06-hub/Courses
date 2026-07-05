@@ -20,8 +20,12 @@ import {
   Plus,
   Smartphone,
   Banknote,
+  CreditCard,
   AlertCircle,
   CheckCircle2,
+  Phone,
+  MapPin,
+  MessageCircle,
 } from 'lucide-react';
 
 const gradeLabelMap: Record<string, { ar: string; en: string }> = {
@@ -57,10 +61,11 @@ interface EnrolledCourse {
   totalLessons: number;
   course: {
     id: number;
-    name: string; // ✅ was: nameAr, nameEn
-    subject: string; // ✅ was: subjectAr, subjectEn
+    name: string;
+    subject: string;
     academicYear: string;
-    instructor: { id: number; fullName: string; avatarUrl: string | null };
+    teacher: { id: number; fullName: string; avatarUrl: string | null };
+    upcomingExamAt: string | null;
   };
 }
 interface ExamAttempt {
@@ -73,26 +78,41 @@ interface ExamAttempt {
     id: number;
     passingScore: number;
     lesson: {
-      title: string; // ✅ was: titleAr, titleEn
-      course: { id: number; name: string }; // ✅ was: nameAr, nameEn
+      title: string;
+      course: { id: number; name: string };
     };
   };
 }
+// Merged wallet-activity item: either a completed ledger entry (kind:
+// 'transaction' — always finished, `status` is a fixed 'completed' tag
+// added by the API for display convenience only) or a top-up request still
+// awaiting admin review (kind: 'topup_request' — the only kind that can
+// carry a real 'pending'/'rejected' status).
+//
+// type: 'topup' (balance credited or being requested) | 'purchase' (course
+// bought with existing balance)
+// method: 'cash' | 'wallet' | 'fawry' (top-ups) | 'balance' (purchases)
 interface Transaction {
   id: number;
+  kind: 'transaction' | 'topup_request';
   amount: number;
   type: string;
   method: string;
   status: string;
   notes: string | null;
   createdAt: string;
-  course: { name: string } | null; // ✅ was: nameAr, nameEn
+  course?: { name: string } | null;
 }
 interface DashboardData {
   profile: Profile;
   enrollments: EnrolledCourse[];
   examAttempts: ExamAttempt[];
   transactions: Transaction[];
+}
+interface CenterInfo {
+  phone: string | null;
+  whatsappNumber: string | null;
+  address: string | null;
 }
 
 const content = {
@@ -116,7 +136,7 @@ const content = {
     progress: 'التقدم',
     lessons: 'درس',
     completed: 'مكتمل',
-    instructor: 'المدرس',
+    teacher: 'المدرس',
     passed: 'ناجح',
     failed: 'راسب',
     pending: 'لم يُسلَّم',
@@ -138,7 +158,14 @@ const content = {
     topUpAmount: 'المبلغ (ج.م)',
     topUpMethod: 'طريقة الدفع',
     topUpCash: 'كاش (بالمركز)',
-    topUpWallet: 'تحويل محفظة (فودافون / اتصالات / اورنج)',
+    topUpWallet: 'تحويل محفظة ',
+    topUpFawry: 'فوري',
+    fawryComingSoon: 'قريبًا',
+    topUpSenderPhone: 'رقم الهاتف المُرسِل منه',
+    topUpSenderPhonePlaceholder: '01xxxxxxxxx',
+    topUpProof: 'صورة إثبات التحويل',
+    topUpProofHint: 'أرفق لقطة شاشة لعملية التحويل للتحقق منها',
+    topUpProofSelected: 'تم اختيار صورة',
     topUpNotes: 'ملاحظات (اختياري)',
     topUpNotesPlaceholder: 'مثال: رقم المعاملة أو اسمك على المحفظة',
     topUpBtn: 'أرسل طلب الشحن',
@@ -153,7 +180,12 @@ const content = {
     walletStep2: 'اكتب رقم المعاملة أو اسمك في خانة الملاحظات أدناه',
     walletStep3: 'انقر "أرسل طلب الشحن" وانتظر تأكيد الإدارة',
     cashInstructions:
-      'ادفع المبلغ في مركز الدراسة واطلب من الموظف تسجيل الدفع، أو أرسل طلبًا وسيتواصل معك فريقنا.',
+      'لدفع نقدًا، يُرجى التوجه إلى مركز الدراسة أو التواصل معنا على البيانات التالية:',
+    cashPhoneLabel: 'رقم الهاتف',
+    cashWhatsappLabel: 'واتساب',
+    cashAddressLabel: 'العنوان',
+    cashInfoNotSet: 'لم يتم تحديد هذه البيانات بعد، يرجى التواصل مع الإدارة',
+    examScheduled: 'امتحان مجدول:',
   },
   en: {
     title: 'Student Dashboard',
@@ -175,7 +207,7 @@ const content = {
     progress: 'Progress',
     lessons: 'lessons',
     completed: 'completed',
-    instructor: 'Instructor',
+    teacher: 'Teacher',
     passed: 'Passed',
     failed: 'Failed',
     pending: 'Not submitted',
@@ -197,7 +229,14 @@ const content = {
     topUpAmount: 'Amount (EGP)',
     topUpMethod: 'Payment method',
     topUpCash: 'Cash (at center)',
-    topUpWallet: 'Wallet transfer (Vodafone / Etisalat / Orange)',
+    topUpWallet: 'Wallet transfer',
+    topUpFawry: 'Fawry',
+    fawryComingSoon: 'Coming soon',
+    topUpSenderPhone: 'Sender\u2019s phone number',
+    topUpSenderPhonePlaceholder: '01xxxxxxxxx',
+    topUpProof: 'Transfer proof photo',
+    topUpProofHint: 'Attach a screenshot of the transfer so we can verify it',
+    topUpProofSelected: 'Photo selected',
     topUpNotes: 'Notes (optional)',
     topUpNotesPlaceholder: 'e.g. transaction number or your wallet name',
     topUpBtn: 'Send Top-Up Request',
@@ -212,7 +251,12 @@ const content = {
     walletStep2: 'Write the transaction number or your name in the notes field below',
     walletStep3: 'Click "Send Top-Up Request" and wait for admin confirmation',
     cashInstructions:
-      'Pay at the study center and ask the staff to log your payment, or send a request and our team will contact you.',
+      'To pay in cash, please visit the study center or contact us using the details below:',
+    cashPhoneLabel: 'Phone number',
+    cashWhatsappLabel: 'WhatsApp',
+    cashAddressLabel: 'Address',
+    cashInfoNotSet: 'This hasn\u2019t been set yet — please contact the admin team.',
+    examScheduled: 'Scheduled exam:',
   },
 };
 
@@ -275,11 +319,14 @@ export default function StudentDashboardPage() {
 
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [centerInfo, setCenterInfo] = useState<CenterInfo | null>(null);
 
   // Top-up form state
   const [topUpAmount, setTopUpAmount] = useState('');
   const [topUpMethod, setTopUpMethod] = useState<'cash' | 'wallet'>('wallet');
   const [topUpNotes, setTopUpNotes] = useState('');
+  const [topUpSenderPhone, setTopUpSenderPhone] = useState('');
+  const [topUpProof, setTopUpProof] = useState<File | null>(null);
   const [topUpLoading, setTopUpLoading] = useState(false);
   const [topUpStatus, setTopUpStatus] = useState<'idle' | 'success' | 'error'>('idle');
 
@@ -300,26 +347,38 @@ export default function StudentDashboardPage() {
 
   useEffect(() => {
     fetchDashboard();
+    fetch('/api/settings')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => d && setCenterInfo(d))
+      .catch(() => {});
   }, []);
 
   const handleTopUp = async () => {
     if (!topUpAmount || Number(topUpAmount) <= 0) return;
+    if (topUpMethod === 'wallet' && (!topUpSenderPhone.trim() || !topUpProof)) return;
+
     setTopUpLoading(true);
     setTopUpStatus('idle');
     try {
+      const formData = new FormData();
+      formData.append('amount', topUpAmount);
+      formData.append('method', topUpMethod);
+      formData.append('notes', topUpNotes);
+      if (topUpMethod === 'wallet') {
+        formData.append('senderPhone', topUpSenderPhone.trim());
+        if (topUpProof) formData.append('proof', topUpProof);
+      }
+
       const res = await fetch('/api/student/wallet', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          amount: Number(topUpAmount),
-          method: topUpMethod,
-          notes: topUpNotes,
-        }),
+        body: formData,
       });
       if (res.ok) {
         setTopUpStatus('success');
         setTopUpAmount('');
         setTopUpNotes('');
+        setTopUpSenderPhone('');
+        setTopUpProof(null);
         fetchDashboard(); // refresh transactions
       } else {
         setTopUpStatus('error');
@@ -335,12 +394,21 @@ export default function StudentDashboardPage() {
     return gradeLabelMap[key] ? (isRtl ? gradeLabelMap[key].ar : gradeLabelMap[key].en) : key;
   };
 
+  // type: 'topup' (balance credited/requested) | 'purchase' (course bought)
+  // method: 'cash' | 'wallet' | 'fawry' for top-ups, 'balance' for purchases
   const txLabel = (tx: Transaction) => {
-    if (tx.type === 'add') return tx.method === 'cash' ? t.cash : t.wallet;
-    if (tx.type === 'deduct') return t.deduct;
-    return t.payment;
+    if (tx.type === 'topup') {
+      if (tx.method === 'cash') return t.cash;
+      if (tx.method === 'wallet') return t.wallet;
+      if (tx.method === 'fawry') return t.fawry;
+      return tx.method;
+    }
+    return t.payment; // 'purchase'
   };
 
+  // Only kind: 'topup_request' items can carry a real 'pending'/'rejected'
+  // status — completed ledger entries (kind: 'transaction') are tagged
+  // 'completed' by the API for convenience, which renders no badge here.
   const txStatusBadge = (status: string) => {
     if (status === 'pending')
       return (
@@ -470,103 +538,237 @@ export default function StudentDashboardPage() {
                     <Banknote size={13} />
                     {t.topUpCash}
                   </button>
+                  {/* Fawry placeholder, disabled until available */}
+                  <button
+                    type="button"
+                    disabled
+                    title={t.fawryComingSoon}
+                    className="flex-1 relative flex items-center justify-center gap-1.5 py-2 rounded-xl border text-xs font-bold border-border text-muted-foreground/50 bg-muted/20 cursor-not-allowed"
+                    style={{ fontFamily: font }}
+                  >
+                    <CreditCard size={13} />
+                    {t.topUpFawry}
+                    <span className="absolute -top-2 ltr:-right-2 rtl:-left-2 text-[9px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full font-bold">
+                      {t.fawryComingSoon}
+                    </span>
+                  </button>
                 </div>
 
-                {/* Instructions */}
-                {topUpMethod === 'wallet' && (
-                  <div
-                    className="rounded-xl bg-muted/40 p-3 mb-3 text-xs text-muted-foreground flex flex-col gap-1"
-                    style={{ fontFamily: font }}
-                  >
-                    <p className="font-bold text-foreground">{t.walletInstructions}</p>
-                    <p>
-                      1. {t.walletStep1}{' '}
-                      <span className="font-bold text-primary" dir="ltr">
-                        {t.walletNumber}
-                      </span>
-                    </p>
-                    <p>2. {t.walletStep2}</p>
-                    <p>3. {t.walletStep3}</p>
-                  </div>
-                )}
-                {topUpMethod === 'cash' && (
-                  <div
-                    className="rounded-xl bg-muted/40 p-3 mb-3 text-xs text-muted-foreground"
-                    style={{ fontFamily: font }}
-                  >
-                    {t.cashInstructions}
-                  </div>
-                )}
-
-                {/* Amount input */}
-                <label
-                  className="text-xs font-semibold text-foreground mb-1 block"
-                  style={{ fontFamily: font }}
-                >
-                  {t.topUpAmount}
-                </label>
-                <input
-                  type="number"
-                  min="1"
-                  value={topUpAmount}
-                  onChange={(e) => setTopUpAmount(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl border border-border bg-background text-foreground text-sm outline-none focus:ring-2 focus:ring-primary/30 transition-all mb-2"
-                  dir="ltr"
-                  placeholder="100"
-                />
-
-                {/* Notes input */}
-                <label
-                  className="text-xs font-semibold text-foreground mb-1 block"
-                  style={{ fontFamily: font }}
-                >
-                  {t.topUpNotes}
-                </label>
-                <textarea
-                  value={topUpNotes}
-                  onChange={(e) => setTopUpNotes(e.target.value)}
-                  placeholder={t.topUpNotesPlaceholder}
-                  rows={2}
-                  className="w-full px-3 py-2 rounded-xl border border-border bg-background text-foreground text-xs outline-none focus:ring-2 focus:ring-primary/30 transition-all resize-none mb-3"
-                  style={{ fontFamily: font }}
-                />
-
-                {/* Feedback */}
-                {topUpStatus === 'success' && (
-                  <div className="flex items-start gap-2 p-3 rounded-xl bg-green-50 border border-green-200 mb-3">
-                    <CheckCircle2 size={15} className="text-green-600 flex-shrink-0 mt-0.5" />
-                    <p
-                      className="text-xs text-green-700 font-semibold"
+                {topUpMethod === 'wallet' ? (
+                  <>
+                    {/* Wallet instructions */}
+                    <div
+                      className="rounded-xl bg-muted/40 p-3 mb-3 text-xs text-muted-foreground flex flex-col gap-1"
                       style={{ fontFamily: font }}
                     >
-                      {t.topUpSent}
-                    </p>
-                  </div>
-                )}
-                {topUpStatus === 'error' && (
-                  <div className="flex items-start gap-2 p-3 rounded-xl bg-red-50 border border-red-200 mb-3">
-                    <AlertCircle size={15} className="text-red-500 flex-shrink-0 mt-0.5" />
-                    <p className="text-xs text-red-600 font-semibold" style={{ fontFamily: font }}>
-                      {t.topUpError}
-                    </p>
-                  </div>
-                )}
+                      <p className="font-bold text-foreground">{t.walletInstructions}</p>
+                      <p>
+                        1. {t.walletStep1}{' '}
+                        <span className="font-bold text-primary" dir="ltr">
+                          {t.walletNumber}
+                        </span>
+                      </p>
+                      <p>2. {t.walletStep2}</p>
+                      <p>3. {t.walletStep3}</p>
+                    </div>
 
-                <button
-                  onClick={handleTopUp}
-                  disabled={topUpLoading || !topUpAmount || Number(topUpAmount) <= 0}
-                  className="w-full py-2.5 rounded-xl gradient-primary text-white text-sm font-bold shadow hover:opacity-90 active:scale-95 transition-all disabled:opacity-50 flex items-center justify-center gap-2"
-                  style={{ fontFamily: font }}
-                >
-                  {topUpLoading ? (
-                    <Loader2 size={15} className="animate-spin" />
-                  ) : (
-                    <>
-                      <Plus size={15} />
-                      {t.topUpBtn}
-                    </>
-                  )}
-                </button>
+                    {/* Amount input */}
+                    <label
+                      className="text-xs font-semibold text-foreground mb-1 block"
+                      style={{ fontFamily: font }}
+                    >
+                      {t.topUpAmount}
+                    </label>
+                    <input
+                      type="number"
+                      min="1"
+                      value={topUpAmount}
+                      onChange={(e) => setTopUpAmount(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl border border-border bg-background text-foreground text-sm outline-none focus:ring-2 focus:ring-primary/30 transition-all mb-2"
+                      dir="ltr"
+                      placeholder="100"
+                    />
+
+                    {/* Sender's phone number */}
+                    <label
+                      className="text-xs font-semibold text-foreground mb-1 block"
+                      style={{ fontFamily: font }}
+                    >
+                      {t.topUpSenderPhone}
+                    </label>
+                    <input
+                      type="tel"
+                      value={topUpSenderPhone}
+                      onChange={(e) => setTopUpSenderPhone(e.target.value)}
+                      placeholder={t.topUpSenderPhonePlaceholder}
+                      className="w-full px-3 py-2 rounded-xl border border-border bg-background text-foreground text-sm outline-none focus:ring-2 focus:ring-primary/30 transition-all mb-2"
+                      dir="ltr"
+                    />
+
+                    {/* Transfer proof photo */}
+                    <label
+                      className="text-xs font-semibold text-foreground mb-1 block"
+                      style={{ fontFamily: font }}
+                    >
+                      {t.topUpProof}
+                    </label>
+                    <p
+                      className="text-[11px] text-muted-foreground mb-1.5"
+                      style={{ fontFamily: font }}
+                    >
+                      {t.topUpProofHint}
+                    </p>
+                    <label className="flex items-center justify-center gap-2 w-full px-3 py-2.5 rounded-xl border border-dashed border-border bg-background text-xs font-semibold text-muted-foreground hover:border-primary/40 cursor-pointer transition-all mb-3">
+                      <CheckCircle2
+                        size={13}
+                        className={topUpProof ? 'text-green-600' : 'text-muted-foreground/50'}
+                      />
+                      <span style={{ fontFamily: font }}>
+                        {topUpProof ? `${t.topUpProofSelected}: ${topUpProof.name}` : t.topUpProof}
+                      </span>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={(e) => setTopUpProof(e.target.files?.[0] ?? null)}
+                      />
+                    </label>
+
+                    {/* Notes input */}
+                    <label
+                      className="text-xs font-semibold text-foreground mb-1 block"
+                      style={{ fontFamily: font }}
+                    >
+                      {t.topUpNotes}
+                    </label>
+                    <textarea
+                      value={topUpNotes}
+                      onChange={(e) => setTopUpNotes(e.target.value)}
+                      placeholder={t.topUpNotesPlaceholder}
+                      rows={2}
+                      className="w-full px-3 py-2 rounded-xl border border-border bg-background text-foreground text-xs outline-none focus:ring-2 focus:ring-primary/30 transition-all resize-none mb-3"
+                      style={{ fontFamily: font }}
+                    />
+
+                    {/* Feedback */}
+                    {topUpStatus === 'success' && (
+                      <div className="flex items-start gap-2 p-3 rounded-xl bg-green-50 border border-green-200 mb-3">
+                        <CheckCircle2 size={15} className="text-green-600 flex-shrink-0 mt-0.5" />
+                        <p
+                          className="text-xs text-green-700 font-semibold"
+                          style={{ fontFamily: font }}
+                        >
+                          {t.topUpSent}
+                        </p>
+                      </div>
+                    )}
+                    {topUpStatus === 'error' && (
+                      <div className="flex items-start gap-2 p-3 rounded-xl bg-red-50 border border-red-200 mb-3">
+                        <AlertCircle size={15} className="text-red-500 flex-shrink-0 mt-0.5" />
+                        <p
+                          className="text-xs text-red-600 font-semibold"
+                          style={{ fontFamily: font }}
+                        >
+                          {t.topUpError}
+                        </p>
+                      </div>
+                    )}
+
+                    <button
+                      onClick={handleTopUp}
+                      disabled={
+                        topUpLoading ||
+                        !topUpAmount ||
+                        Number(topUpAmount) <= 0 ||
+                        !topUpSenderPhone.trim() ||
+                        !topUpProof
+                      }
+                      className="w-full py-2.5 rounded-xl gradient-primary text-white text-sm font-bold shadow hover:opacity-90 active:scale-95 transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+                      style={{ fontFamily: font }}
+                    >
+                      {topUpLoading ? (
+                        <Loader2 size={15} className="animate-spin" />
+                      ) : (
+                        <>
+                          <Plus size={15} />
+                          {t.topUpBtn}
+                        </>
+                      )}
+                    </button>
+                  </>
+                ) : (
+                  /* Cash: no inputs — show real center contact details instead */
+                  <div className="rounded-xl bg-muted/40 p-4 text-xs text-muted-foreground flex flex-col gap-3">
+                    <p className="font-bold text-foreground text-sm" style={{ fontFamily: font }}>
+                      {t.cashInstructions}
+                    </p>
+
+                    <div className="flex flex-col gap-2.5">
+                      <div className="flex items-center gap-2.5">
+                        <span className="w-7 h-7 rounded-lg bg-primary/10 text-primary flex items-center justify-center flex-shrink-0">
+                          <Phone size={13} />
+                        </span>
+                        <div className="min-w-0">
+                          <p className="text-[11px] font-semibold" style={{ fontFamily: font }}>
+                            {t.cashPhoneLabel}
+                          </p>
+                          {centerInfo?.phone ? (
+                            <p className="text-sm font-bold text-foreground" dir="ltr">
+                              {centerInfo.phone}
+                            </p>
+                          ) : (
+                            <p className="italic" style={{ fontFamily: font }}>
+                              {t.cashInfoNotSet}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2.5">
+                        <span className="w-7 h-7 rounded-lg bg-primary/10 text-primary flex items-center justify-center flex-shrink-0">
+                          <MessageCircle size={13} />
+                        </span>
+                        <div className="min-w-0">
+                          <p className="text-[11px] font-semibold" style={{ fontFamily: font }}>
+                            {t.cashWhatsappLabel}
+                          </p>
+                          {centerInfo?.whatsappNumber ? (
+                            <p className="text-sm font-bold text-foreground" dir="ltr">
+                              {centerInfo.whatsappNumber}
+                            </p>
+                          ) : (
+                            <p className="italic" style={{ fontFamily: font }}>
+                              {t.cashInfoNotSet}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="flex items-start gap-2.5">
+                        <span className="w-7 h-7 rounded-lg bg-primary/10 text-primary flex items-center justify-center flex-shrink-0 mt-0.5">
+                          <MapPin size={13} />
+                        </span>
+                        <div className="min-w-0">
+                          <p className="text-[11px] font-semibold" style={{ fontFamily: font }}>
+                            {t.cashAddressLabel}
+                          </p>
+                          {centerInfo?.address ? (
+                            <p
+                              className="text-sm font-bold text-foreground break-words"
+                              style={{ fontFamily: font }}
+                            >
+                              {centerInfo.address}
+                            </p>
+                          ) : (
+                            <p className="italic" style={{ fontFamily: font }}>
+                              {t.cashInfoNotSet}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Transaction history */}
@@ -581,7 +783,7 @@ export default function StudentDashboardPage() {
                 <div className="flex flex-col gap-2">
                   {transactions.map((tx) => (
                     <div
-                      key={tx.id}
+                      key={`${tx.kind}-${tx.id}`}
                       className="flex items-center justify-between gap-2 py-2 border-b border-border last:border-0"
                     >
                       <div className="flex flex-col min-w-0 gap-0.5">
@@ -590,7 +792,6 @@ export default function StudentDashboardPage() {
                           style={{ fontFamily: font }}
                         >
                           {txLabel(tx)}
-                          {/* ✅ was: isRtl ? tx.course.nameAr : tx.course.nameEn */}
                           {tx.course && ` — ${tx.course.name}`}
                           {txStatusBadge(tx.status)}
                         </span>
@@ -599,10 +800,10 @@ export default function StudentDashboardPage() {
                         </span>
                       </div>
                       <span
-                        className={`text-sm font-bold flex-shrink-0 ${tx.type === 'add' ? 'text-green-600' : 'text-red-500'}`}
+                        className={`text-sm font-bold flex-shrink-0 ${tx.type === 'topup' ? 'text-green-600' : 'text-red-500'}`}
                         dir="ltr"
                       >
-                        {tx.type === 'add' ? '+' : '-'}
+                        {tx.type === 'topup' ? '+' : '-'}
                         {tx.amount} {t.egp}
                       </span>
                     </div>
@@ -635,14 +836,12 @@ export default function StudentDashboardPage() {
                     >
                       <div className="flex items-start justify-between gap-3 mb-3">
                         <div className="min-w-0">
-                          {/* ✅ was: isRtl ? e.course.nameAr : e.course.nameEn */}
                           <p
                             className="font-bold text-foreground truncate group-hover:text-primary transition-colors"
                             style={{ fontFamily: font }}
                           >
                             {e.course.name}
                           </p>
-                          {/* ✅ was: isRtl ? e.course.subjectAr : e.course.subjectEn */}
                           <p
                             className="text-xs text-muted-foreground mt-0.5"
                             style={{ fontFamily: font }}
@@ -652,15 +851,15 @@ export default function StudentDashboardPage() {
                         </div>
                         <div className="flex items-center gap-1.5 flex-shrink-0">
                           <Avatar
-                            url={e.course.instructor.avatarUrl}
-                            name={e.course.instructor.fullName}
+                            url={e.course.teacher.avatarUrl}
+                            name={e.course.teacher.fullName}
                             size={24}
                           />
                           <span
                             className="text-xs text-muted-foreground"
                             style={{ fontFamily: font }}
                           >
-                            {e.course.instructor.fullName}
+                            {e.course.teacher.fullName}
                           </span>
                         </div>
                       </div>
@@ -686,6 +885,21 @@ export default function StudentDashboardPage() {
                           {t.watchNow}
                         </span>
                       </div>
+                      {e.course.upcomingExamAt && (
+                        <div
+                          className="mt-2 flex items-center gap-1.5 text-xs font-semibold text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-1.5"
+                          style={{ fontFamily: font }}
+                        >
+                          <Clock size={12} />
+                          {t.examScheduled}{' '}
+                          <span dir="ltr">
+                            {new Date(e.course.upcomingExamAt).toLocaleString(
+                              isRtl ? 'ar-EG' : 'en-EG',
+                              { dateStyle: 'medium', timeStyle: 'short' }
+                            )}
+                          </span>
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -710,14 +924,12 @@ export default function StudentDashboardPage() {
                     >
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
-                          {/* ✅ was: isRtl ? attempt.exam.lesson.titleAr : attempt.exam.lesson.titleEn */}
                           <p
                             className="font-semibold text-foreground text-sm truncate"
                             style={{ fontFamily: font }}
                           >
                             {attempt.exam.lesson.title}
                           </p>
-                          {/* ✅ was: isRtl ? ...course.nameAr : ...course.nameEn */}
                           <p
                             className="text-xs text-muted-foreground mt-0.5 truncate"
                             style={{ fontFamily: font }}
