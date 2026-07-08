@@ -25,12 +25,13 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
         where: { isVisible: true }, // ✅ removed type:'video' — include exams too
         orderBy: { order: 'asc' },
         include: {
-          video: { select: { id: true, vimeoId: true, durationSec: true } },
+          video: { select: { id: true, vimeoId: true, description: true, createdAt: true } },
           exam: {
             select: {
               id: true,
               durationMinutes: true,
               passingScore: true,
+              scheduledAt: true, // ✅ needed by the client to lock/countdown a scheduled exam
               // Include the student's latest attempt for this exam
               attempts: {
                 where: { studentId: user.id },

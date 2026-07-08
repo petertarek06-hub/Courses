@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import Header from '@/components/Header';
 import Footer from '@/components/Footer';
+import ExamCountdownBadge from '@/components/ExamCountdownBadge';
 import { useLang } from '@/lib/uselang';
 import {
   User,
@@ -886,18 +887,13 @@ export default function StudentDashboardPage() {
                         </span>
                       </div>
                       {e.course.upcomingExamAt && (
-                        <div
-                          className="mt-2 flex items-center gap-1.5 text-xs font-semibold text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-1.5"
-                          style={{ fontFamily: font }}
-                        >
-                          <Clock size={12} />
-                          {t.examScheduled}{' '}
-                          <span dir="ltr">
-                            {new Date(e.course.upcomingExamAt).toLocaleString(
-                              isRtl ? 'ar-EG' : 'en-EG',
-                              { dateStyle: 'medium', timeStyle: 'short' }
-                            )}
-                          </span>
+                        <div className="mt-2">
+                          <ExamCountdownBadge
+                            scheduledAt={e.course.upcomingExamAt}
+                            lang={lang}
+                            font={font}
+                            label={t.examScheduled}
+                          />
                         </div>
                       )}
                     </div>

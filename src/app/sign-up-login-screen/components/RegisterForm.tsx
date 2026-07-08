@@ -1,8 +1,9 @@
+//src/app/sign-up-login-screen/components/RegiserForm.tsx
 'use client';
 import React, { useState, useRef } from 'react';
 import { useForm } from 'react-hook-form';
 import { Eye, EyeOff, Loader2, User, Phone, Mail, GraduationCap, Camera, X } from 'lucide-react';
-import { toast } from 'sonner';
+import { notifySuccess, notifyError } from '@/lib/notify';
 
 interface Props {
   lang: 'ar' | 'en';
@@ -141,12 +142,12 @@ export default function RegisterForm({ lang, onSwitchToLogin }: Props) {
     if (!file) return;
 
     if (!ALLOWED_TYPES.includes(file.type)) {
-      toast.error(t.avatarTypeError);
+      notifyError(t.avatarTypeError);
       e.target.value = '';
       return;
     }
     if (file.size > MAX_SIZE_BYTES) {
-      toast.error(t.avatarSizeError);
+      notifyError(t.avatarSizeError);
       e.target.value = '';
       return;
     }
@@ -185,9 +186,9 @@ export default function RegisterForm({ lang, onSwitchToLogin }: Props) {
       const result = await res.json();
 
       if (!res.ok) {
-        toast.error(result.error);
+        notifyError(result.error);
       } else {
-        toast.success(t.successMsg);
+        notifySuccess(t.successMsg);
         if (result.role === 'admin') {
           window.location.href = '/admin';
         } else {
@@ -195,7 +196,7 @@ export default function RegisterForm({ lang, onSwitchToLogin }: Props) {
         }
       }
     } catch {
-      toast.error(lang === 'ar' ? 'حدث خطأ، حاول مرة أخرى' : 'Something went wrong');
+      notifyError(lang === 'ar' ? 'حدث خطأ، حاول مرة أخرى' : 'Something went wrong');
     } finally {
       setIsLoading(false);
     }

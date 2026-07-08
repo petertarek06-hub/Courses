@@ -4,7 +4,15 @@ import React, { useEffect, useState, use, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import Header from '@/components/Header';
 import Footer from '@/components/Footer';
+import ExamCountdownBadge from '@/components/ExamCountdownBadge';
 import { useLang } from '@/lib/uselang';
+import {
+  isLessonComplete,
+  isLessonUnlocked,
+  isScheduledExam,
+  isScheduledExamAvailable,
+  getSequencedLessons,
+} from '@/lib/examSchedule';
 import {
   ArrowRight,
   CheckCircle,
@@ -17,57 +25,50 @@ import {
   Trophy,
   Clock,
   XCircle,
+  List,
+  Lock,
 } from 'lucide-react';
 import Image from 'next/image';
 
-// ── Types ───────────────────────────────────────────────────────
 interface VideoRecord {
   id: number;
   vimeoId: string;
   durationSec: number | null;
 }
-
 interface ExamAttempt {
   id: number;
   score: number | null;
   passed: boolean | null;
   submittedAt: string | null;
 }
-
 interface ExamRecord {
   id: number;
   durationMinutes: number | null;
   passingScore: number;
+  scheduledAt: string | null;
   attempts: ExamAttempt[];
 }
-
 interface LessonProgress {
   completed: boolean;
   completedAt: string | null;
 }
-
 interface Lesson {
   id: number;
-  titleAr: string;
-  titleEn: string;
+  title: string;
   order: number;
   type: 'video' | 'exam';
   video: VideoRecord | null;
   exam: ExamRecord | null;
   progress: LessonProgress[];
 }
-
 interface Course {
   id: number;
-  nameAr: string;
-  nameEn: string;
-  subjectAr: string;
-  subjectEn: string;
+  name: string;
+  subject: string;
   teacher: { id: number; fullName: string; avatarUrl: string | null };
   lessons: Lesson[];
 }
 
-// ── Translations ────────────────────────────────────────────────
 const content = {
   ar: {
     back: 'لوحة الطالب',
@@ -79,21 +80,23 @@ const content = {
     completed: 'مكتمل',
     lesson: 'الدرس',
     sidebarTitle: 'محتوى الكورس',
+    scheduledExamsTitle: 'امتحانات مجدولة',
     lessons: 'درس',
     teacher: 'المدرس',
     selectLesson: 'اختر درسًا لتبدأ المشاهدة',
     examLesson: 'امتحان',
-    videoLesson: 'فيديو',
-    examDuration: 'المدة',
     examPassing: 'درجة النجاح',
     examMinutes: 'دقيقة',
-    examScore: 'درجتك',
     examPassed: 'ناجح ✓',
     examFailed: 'راسب',
     examNotTaken: 'لم تؤدِّ الامتحان بعد',
     examTake: 'ابدأ الامتحان',
     examRetake: 'إعادة الامتحان',
     examPending: 'جارٍ التقييم',
+    examOpensAt: 'يبدأ الامتحان في:',
+    showContent: 'محتوى الكورس',
+    hideContent: 'إخفاء المحتوى',
+    locked: 'أكمل الدرس السابق أولاً',
   },
   en: {
     back: 'Student Dashboard',
@@ -105,34 +108,33 @@ const content = {
     completed: 'Completed',
     lesson: 'Lesson',
     sidebarTitle: 'Course Content',
+    scheduledExamsTitle: 'Scheduled Exams',
     lessons: 'lessons',
     teacher: 'Teacher',
     selectLesson: 'Select a lesson to start watching',
     examLesson: 'Exam',
-    videoLesson: 'Video',
-    examDuration: 'Duration',
     examPassing: 'Passing score',
     examMinutes: 'min',
-    examScore: 'Your score',
     examPassed: 'Passed ✓',
     examFailed: 'Failed',
     examNotTaken: "You haven't taken this exam yet",
     examTake: 'Start Exam',
     examRetake: 'Retake Exam',
     examPending: 'Awaiting review',
+    examOpensAt: 'Exam opens at:',
+    showContent: 'Course Content',
+    hideContent: 'Hide Content',
+    locked: 'Complete the previous lesson first',
   },
 };
 
-// ── Helpers ─────────────────────────────────────────────────────
 function formatDuration(sec: number | null) {
   if (!sec) return '';
-  const m = Math.floor(sec / 60);
-  const s = sec % 60;
-  return `${m}:${String(s).padStart(2, '0')}`;
+  return `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`;
 }
 
 function Avatar({ url, name, size = 32 }: { url: string | null; name: string; size?: number }) {
-  if (url) {
+  if (url)
     return (
       <Image
         src={url}
@@ -143,7 +145,6 @@ function Avatar({ url, name, size = 32 }: { url: string | null; name: string; si
         style={{ width: size, height: size }}
       />
     );
-  }
   const initials = name
     .trim()
     .split(' ')
@@ -161,8 +162,104 @@ function Avatar({ url, name, size = 32 }: { url: string | null; name: string; si
   );
 }
 
-// ── Sidebar lesson row ──────────────────────────────────────────
+// Row for a normal sequenced lesson (video or non-scheduled exam).
+// `sequencedLessons`/`index` are relative to the SEQUENCED list only —
+// scheduled exams never appear here and never affect this lock chain.
 function LessonRow({
+  lesson,
+  index,
+  sequencedLessons,
+  isActive,
+  isRtl,
+  font,
+  lockedMsg,
+  onClick,
+}: {
+  lesson: Lesson;
+  index: number;
+  sequencedLessons: Lesson[];
+  isActive: boolean;
+  isRtl: boolean;
+  font: string | undefined;
+  lockedMsg: string;
+  onClick: () => void;
+}) {
+  const [showTooltip, setShowTooltip] = useState(false);
+  const unlocked = isLessonUnlocked(sequencedLessons, index);
+  const done = isLessonComplete(lesson);
+  const isExam = lesson.type === 'exam';
+  const attempt = lesson.exam?.attempts[0];
+
+  const handleClick = () => {
+    if (!unlocked) {
+      setShowTooltip(true);
+      setTimeout(() => setShowTooltip(false), 2000);
+      return;
+    }
+    onClick();
+  };
+
+  return (
+    <div className="relative">
+      <button
+        onClick={handleClick}
+        className={`w-full text-start flex items-start gap-3 px-4 py-3 border-b border-border transition-colors
+          ${!unlocked ? 'opacity-45 cursor-not-allowed' : isActive ? 'bg-primary/8 border-s-2 border-s-primary' : 'hover:bg-muted/30'}`}
+      >
+        <span className="mt-0.5 flex-shrink-0">
+          {!unlocked ? (
+            <Lock size={16} className="text-muted-foreground" />
+          ) : isExam ? (
+            attempt?.passed === true ? (
+              <Trophy size={16} className="text-green-500" />
+            ) : attempt?.passed === false ? (
+              <XCircle size={16} className="text-red-400" />
+            ) : (
+              <ClipboardList size={16} className="text-accent" />
+            )
+          ) : done ? (
+            <CheckCircle size={16} className="text-green-500" />
+          ) : (
+            <Circle size={16} className="text-muted-foreground" />
+          )}
+        </span>
+        <div className="min-w-0 flex-1">
+          <p
+            className={`text-xs font-semibold truncate ${isActive && unlocked ? 'text-primary' : 'text-foreground'}`}
+            style={{ fontFamily: font }}
+          >
+            {lesson.title}
+          </p>
+          {isExam ? (
+            <p className="text-xs text-accent mt-0.5" style={{ fontFamily: font }}>
+              {isRtl ? '📝 امتحان' : '📝 Exam'}
+            </p>
+          ) : lesson.video?.durationSec ? (
+            <p className="text-xs text-muted-foreground mt-0.5" dir="ltr">
+              {formatDuration(lesson.video.durationSec)}
+            </p>
+          ) : null}
+        </div>
+      </button>
+
+      {showTooltip && (
+        <div
+          className={`absolute bottom-full mb-1 ${isRtl ? 'right-3' : 'left-3'} z-10
+            bg-foreground text-background text-xs font-semibold px-3 py-1.5 rounded-lg
+            shadow-lg whitespace-nowrap pointer-events-none animate-fade-in`}
+          style={{ fontFamily: font }}
+        >
+          <Lock size={11} className="inline-block me-1 mb-0.5" />
+          {lockedMsg}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Row for a standalone scheduled exam — availability depends only on
+// scheduledAt, never on sequence/progress of any other lesson.
+function ScheduledExamRow({
   lesson,
   isActive,
   isRtl,
@@ -175,59 +272,45 @@ function LessonRow({
   font: string | undefined;
   onClick: () => void;
 }) {
-  const done = lesson.progress[0]?.completed ?? false;
-  const isExam = lesson.type === 'exam';
-  const attempt = lesson.exam?.attempts[0];
-  const examPassed = attempt?.passed === true;
-  const examFailed = attempt?.passed === false;
+  const exam = lesson.exam!;
+  const available = isScheduledExamAvailable(exam.scheduledAt!);
+  const attempt = exam.attempts[0];
 
   return (
     <button
       onClick={onClick}
-      className={`w-full text-start flex items-start gap-3 px-4 py-3 border-b border-border transition-colors ${
-        isActive ? 'bg-primary/8 border-s-2 border-s-primary' : 'hover:bg-muted/30'
-      }`}
+      className={`w-full text-start flex items-start gap-3 px-4 py-3 border-b border-border transition-colors
+        ${isActive ? 'bg-primary/8 border-s-2 border-s-primary' : 'hover:bg-muted/30'}`}
     >
-      {/* Status icon */}
       <span className="mt-0.5 flex-shrink-0">
-        {isExam ? (
-          examPassed ? (
-            <Trophy size={16} className="text-green-500" />
-          ) : examFailed ? (
-            <XCircle size={16} className="text-red-400" />
-          ) : (
-            <ClipboardList size={16} className="text-accent" />
-          )
-        ) : done ? (
-          <CheckCircle size={16} className="text-green-500" />
+        {attempt?.passed === true ? (
+          <Trophy size={16} className="text-green-500" />
+        ) : attempt?.passed === false ? (
+          <XCircle size={16} className="text-red-400" />
+        ) : !available ? (
+          <Clock size={16} className="text-amber-500" />
         ) : (
-          <Circle size={16} className="text-muted-foreground" />
+          <ClipboardList size={16} className="text-accent" />
         )}
       </span>
-
       <div className="min-w-0 flex-1">
         <p
           className={`text-xs font-semibold truncate ${isActive ? 'text-primary' : 'text-foreground'}`}
           style={{ fontFamily: font }}
         >
-          {isRtl ? lesson.titleAr : lesson.titleEn}
+          {lesson.title}
         </p>
-        {/* Sub-label */}
-        {isExam ? (
-          <p className="text-xs text-accent mt-0.5" style={{ fontFamily: font }}>
-            {isRtl ? '📝 امتحان' : '📝 Exam'}
-          </p>
-        ) : lesson.video?.durationSec ? (
-          <p className="text-xs text-muted-foreground mt-0.5" dir="ltr">
-            {formatDuration(lesson.video.durationSec)}
-          </p>
-        ) : null}
+        <p className="text-xs text-amber-600 mt-0.5" dir="ltr">
+          {new Date(exam.scheduledAt!).toLocaleString(isRtl ? 'ar-EG' : 'en-EG', {
+            dateStyle: 'medium',
+            timeStyle: 'short',
+          })}
+        </p>
       </div>
     </button>
   );
 }
 
-// ── Exam panel ──────────────────────────────────────────────────
 function ExamPanel({
   lesson,
   lang,
@@ -240,32 +323,30 @@ function ExamPanel({
   courseId: number;
 }) {
   const t = content[lang];
-  const isRtl = lang === 'ar';
   const exam = lesson.exam!;
   const attempt = exam.attempts[0];
   const hasAttempt = !!attempt?.submittedAt;
   const isPassed = attempt?.passed === true;
   const isFailed = attempt?.passed === false;
-  const isPending = attempt && !attempt.submittedAt;
+  const isTimeLocked = !!exam.scheduledAt && new Date(exam.scheduledAt) > new Date();
 
   return (
-    <div className="flex-1 flex flex-col items-center justify-center p-8 gap-6">
-      {/* Exam icon */}
-      <div className="w-20 h-20 rounded-2xl bg-accent/10 flex items-center justify-center">
-        <ClipboardList size={40} className="text-accent" />
+    <div className="flex-1 flex flex-col items-center justify-center p-6 sm:p-8 gap-5 sm:gap-6 text-center">
+      <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl bg-accent/10 flex items-center justify-center">
+        <ClipboardList size={32} className="text-accent sm:hidden" />
+        <ClipboardList size={40} className="text-accent hidden sm:block" />
       </div>
-
-      {/* Title */}
-      <div className="text-center">
+      <div>
         <p className="text-xs text-muted-foreground mb-1" style={{ fontFamily: font }}>
           {t.examLesson} {lesson.order}
         </p>
-        <h2 className="text-xl font-bold text-foreground" style={{ fontFamily: font }}>
-          {isRtl ? lesson.titleAr : lesson.titleEn}
+        <h2
+          className="text-lg sm:text-xl font-bold text-foreground px-2"
+          style={{ fontFamily: font }}
+        >
+          {lesson.title}
         </h2>
       </div>
-
-      {/* Exam meta */}
       <div className="flex items-center gap-6 text-sm">
         {exam.durationMinutes && (
           <div className="flex flex-col items-center gap-1">
@@ -284,56 +365,67 @@ function ExamPanel({
           </span>
         </div>
       </div>
-
-      {/* Result card (if attempted) */}
       {hasAttempt && (
         <div
-          className={`w-full max-w-sm p-4 rounded-2xl border text-center ${
-            isPassed
-              ? 'bg-green-50 border-green-200'
-              : isFailed
-                ? 'bg-red-50 border-red-200'
-                : 'bg-muted border-border'
-          }`}
+          className={`w-full max-w-sm p-4 rounded-2xl border text-center ${isPassed ? 'bg-green-50 border-green-200' : isFailed ? 'bg-red-50 border-red-200' : 'bg-muted border-border'}`}
         >
           <p
-            className={`text-2xl font-extrabold mb-1 ${
-              isPassed ? 'text-green-600' : isFailed ? 'text-red-500' : 'text-foreground'
-            }`}
+            className={`text-2xl font-extrabold mb-1 ${isPassed ? 'text-green-600' : isFailed ? 'text-red-500' : 'text-foreground'}`}
           >
             {attempt.score !== null ? `${attempt.score}%` : '—'}
           </p>
           <p
-            className={`text-sm font-bold ${
-              isPassed ? 'text-green-600' : isFailed ? 'text-red-500' : 'text-muted-foreground'
-            }`}
+            className={`text-sm font-bold ${isPassed ? 'text-green-600' : isFailed ? 'text-red-500' : 'text-muted-foreground'}`}
             style={{ fontFamily: font }}
           >
             {isPassed ? t.examPassed : isFailed ? t.examFailed : t.examPending}
           </p>
         </div>
       )}
-
-      {/* No attempt yet */}
-      {!attempt && (
+      {!attempt && !isTimeLocked && (
         <p className="text-sm text-muted-foreground" style={{ fontFamily: font }}>
           {t.examNotTaken}
         </p>
       )}
-
-      {/* CTA — placeholder; exam taking UI would be a separate page/modal */}
-      <a
-        href={`/student-dashboard/courses/${courseId}/lessons/exam/${lesson.id}`}
-        className="px-8 py-3 rounded-xl gradient-primary text-white font-bold text-sm hover:opacity-90 active:scale-95 transition-all"
-        style={{ fontFamily: font }}
-      >
-        {hasAttempt ? t.examRetake : t.examTake}
-      </a>
+      {isTimeLocked ? (
+        <ExamCountdownBadge
+          scheduledAt={exam.scheduledAt!}
+          lang={lang}
+          font={font}
+          label={t.examOpensAt}
+        />
+      ) : (
+        <a
+          href={`/student-dashboard/courses/${courseId}/lessons/exam/${lesson.id}`}
+          className="w-full sm:w-auto px-8 py-3 rounded-xl gradient-primary text-white font-bold text-sm hover:opacity-90 active:scale-95 transition-all"
+          style={{ fontFamily: font }}
+        >
+          {hasAttempt ? t.examRetake : t.examTake}
+        </a>
+      )}
     </div>
   );
 }
 
-// ── Main Component ──────────────────────────────────────────────
+function ProtectedPlayer({ vimeoId }: { vimeoId: string }) {
+  return (
+    <div
+      className="relative w-full bg-black"
+      style={{ paddingTop: '56.25%' }}
+      onContextMenu={(e) => e.preventDefault()}
+    >
+      <iframe
+        key={vimeoId}
+        src={`https://player.vimeo.com/video/${vimeoId}?autoplay=1&color=6366f1&title=0&byline=0&portrait=0&dnt=1`}
+        className="absolute inset-0 w-full h-full"
+        allow="autoplay; fullscreen; picture-in-picture"
+        allowFullScreen
+      />
+      <div className="absolute inset-0" style={{ pointerEvents: 'none' }} aria-hidden="true" />
+    </div>
+  );
+}
+
 export default function StudentCourseLessonsPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const courseId = Number(id);
@@ -349,6 +441,7 @@ export default function StudentCourseLessonsPage({ params }: { params: Promise<{
   const [activeLesson, setActiveLesson] = useState<Lesson | null>(null);
   const [marking, setMarking] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [mobileListOpen, setMobileListOpen] = useState(false);
 
   const fetchCourse = useCallback(() => {
     fetch(`/api/student/course/${courseId}`)
@@ -370,11 +463,12 @@ export default function StudentCourseLessonsPage({ params }: { params: Promise<{
       .then((d) => {
         if (!d) return;
         setCourse(d.course);
-        // Auto-select first incomplete video lesson, or first lesson overall
-        const firstIncomplete =
-          d.course.lessons.find((l: Lesson) => l.type === 'video' && !l.progress[0]?.completed) ??
-          d.course.lessons[0];
-        if (firstIncomplete) setActiveLesson(firstIncomplete);
+        const allLessons: Lesson[] = d.course.lessons;
+        const sequenced = getSequencedLessons(allLessons) as Lesson[];
+        const firstUnfinished =
+          sequenced.find((l, i) => isLessonUnlocked(sequenced, i) && !isLessonComplete(l)) ??
+          sequenced[0];
+        if (firstUnfinished) setActiveLesson(firstUnfinished);
       })
       .catch(() => setError('load'))
       .finally(() => setLoading(false));
@@ -404,13 +498,15 @@ export default function StudentCourseLessonsPage({ params }: { params: Promise<{
     setMarking(false);
   };
 
-  const completedCount = course?.lessons.filter((l) => l.progress[0]?.completed).length ?? 0;
-  const totalCount = course?.lessons.length ?? 0;
-  const progressPct = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0;
-  const isCompleted = activeLesson?.progress[0]?.completed ?? false;
+  const sequencedLessons = course ? (getSequencedLessons(course.lessons) as Lesson[]) : [];
+  const scheduledExams = course ? course.lessons.filter(isScheduledExam) : [];
 
-  // ── Loading ──────────────────────────────────────────────────
-  if (loading) {
+  const completedCount = sequencedLessons.filter(isLessonComplete).length;
+  const totalCount = sequencedLessons.length;
+  const progressPct = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0;
+  const isCompleted = activeLesson ? isLessonComplete(activeLesson) : false;
+
+  if (loading)
     return (
       <div className="min-h-screen flex flex-col bg-background" dir={isRtl ? 'rtl' : 'ltr'}>
         <Header lang={lang} onToggleLang={toggleLang} currentPath="/student-dashboard" />
@@ -420,14 +516,12 @@ export default function StudentCourseLessonsPage({ params }: { params: Promise<{
         <Footer lang={lang} />
       </div>
     );
-  }
 
-  // ── Error ────────────────────────────────────────────────────
-  if (error) {
+  if (error)
     return (
       <div className="min-h-screen flex flex-col bg-background" dir={isRtl ? 'rtl' : 'ltr'}>
         <Header lang={lang} onToggleLang={toggleLang} currentPath="/student-dashboard" />
-        <div className="flex-1 flex flex-col items-center justify-center gap-4">
+        <div className="flex-1 flex flex-col items-center justify-center gap-4 px-4 text-center">
           <p className="text-muted-foreground text-sm" style={{ fontFamily: font }}>
             {error === 'notEnrolled' ? t.notEnrolled : t.errorLoad}
           </p>
@@ -442,7 +536,6 @@ export default function StudentCourseLessonsPage({ params }: { params: Promise<{
         <Footer lang={lang} />
       </div>
     );
-  }
 
   if (!course) return null;
 
@@ -453,76 +546,63 @@ export default function StudentCourseLessonsPage({ params }: { params: Promise<{
       style={{ fontFamily: font }}
     >
       <Header lang={lang} onToggleLang={toggleLang} currentPath="/student-dashboard" />
-
       <main className="flex-1 flex flex-col">
-        {/* ── Top bar ── */}
-        <div className="border-b border-border bg-card px-4 sm:px-6 py-3 flex items-center justify-between gap-4 flex-wrap">
-          <div className="flex items-center gap-3 min-w-0">
+        <div className="border-b border-border bg-card px-3 sm:px-6 py-2.5 sm:py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-4">
+          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
             <button
               onClick={() => router.push('/student-dashboard')}
               className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors flex-shrink-0"
               style={{ fontFamily: font }}
             >
               {isRtl ? <ArrowRight size={16} /> : <ArrowRight size={16} className="rotate-180" />}
-              {t.back}
+              <span className="hidden xs:inline">{t.back}</span>
             </button>
             <span className="text-muted-foreground flex-shrink-0">/</span>
             <p className="font-bold text-foreground text-sm truncate" style={{ fontFamily: font }}>
-              {isRtl ? course.nameAr : course.nameEn}
+              {course.name}
             </p>
           </div>
-
-          {/* Progress bar */}
-          <div className="flex items-center gap-3 flex-shrink-0">
-            <div className="w-32 h-2 bg-muted rounded-full overflow-hidden">
+          <div className="flex items-center gap-2 sm:gap-3 flex-shrink-0">
+            <div className="flex-1 sm:w-32 h-2 bg-muted rounded-full overflow-hidden min-w-[60px]">
               <div
                 className="h-full bg-primary rounded-full transition-all duration-500"
                 style={{ width: `${progressPct}%` }}
               />
             </div>
-            <span className="text-xs font-bold text-primary">{progressPct}%</span>
-            <span className="text-xs text-muted-foreground" style={{ fontFamily: font }}>
+            <span className="text-xs font-bold text-primary flex-shrink-0">{progressPct}%</span>
+            <span
+              className="text-xs text-muted-foreground flex-shrink-0 hidden xs:inline"
+              style={{ fontFamily: font }}
+            >
               {completedCount}/{totalCount} {t.lessons}
             </span>
           </div>
         </div>
 
-        {/* ── Body: main area + sidebar ── */}
-        <div className="flex flex-1 overflow-hidden">
-          {/* ── Main area ── */}
-          <div className="flex-1 flex flex-col min-w-0 overflow-y-auto">
+        <div className="flex flex-col lg:flex-row flex-1 lg:overflow-hidden">
+          <div className="flex-1 flex flex-col min-w-0 lg:overflow-y-auto order-1">
             {!activeLesson ? (
-              // Nothing selected
-              <div className="flex-1 flex flex-col items-center justify-center gap-3 p-8">
+              <div className="flex-1 flex flex-col items-center justify-center gap-3 p-8 text-center">
                 <PlayCircle size={48} className="text-muted-foreground/30" />
                 <p className="text-muted-foreground text-sm" style={{ fontFamily: font }}>
                   {course.lessons.length === 0 ? t.noLessons : t.selectLesson}
                 </p>
               </div>
             ) : activeLesson.type === 'exam' ? (
-              // ── Exam panel ──────────────────────────────────
               <ExamPanel lesson={activeLesson} lang={lang} font={font} courseId={courseId} />
             ) : activeLesson.video ? (
-              // ── Video player ─────────────────────────────────
               <>
-                {/* مشغل الفيديو */}
-                <div className="relative w-full bg-black" style={{ paddingTop: '56.25%' }}>
-                  <iframe
-                    key={activeLesson.video.vimeoId}
-                    src={`https://player.vimeo.com/video/${activeLesson.video.vimeoId}?background=1&autoplay=1&loop=1&color=6366f1`}
-                    className="absolute inset-0 w-full h-full"
-                    allow="autoplay; fullscreen; picture-in-picture"
-                  />
-                </div>
-
-                {/* Lesson info + mark complete */}
-                <div className="p-4 sm:p-6 flex flex-col sm:flex-row sm:items-start justify-between gap-4 border-b border-border">
+                <ProtectedPlayer vimeoId={activeLesson.video.vimeoId} />
+                <div className="p-4 sm:p-6 flex flex-col sm:flex-row sm:items-start justify-between gap-3 sm:gap-4 border-b border-border">
                   <div className="min-w-0">
                     <p className="text-xs text-muted-foreground mb-1" style={{ fontFamily: font }}>
                       {t.lesson} {activeLesson.order}
                     </p>
-                    <h2 className="text-lg font-bold text-foreground" style={{ fontFamily: font }}>
-                      {isRtl ? activeLesson.titleAr : activeLesson.titleEn}
+                    <h2
+                      className="text-base sm:text-lg font-bold text-foreground"
+                      style={{ fontFamily: font }}
+                    >
+                      {activeLesson.title}
                     </h2>
                     {activeLesson.video.durationSec && (
                       <p className="text-xs text-muted-foreground mt-1" dir="ltr">
@@ -530,10 +610,9 @@ export default function StudentCourseLessonsPage({ params }: { params: Promise<{
                       </p>
                     )}
                   </div>
-
                   {isCompleted ? (
                     <span
-                      className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-green-500/10 text-green-600 text-sm font-bold flex-shrink-0"
+                      className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl bg-green-500/10 text-green-600 text-sm font-bold flex-shrink-0"
                       style={{ fontFamily: font }}
                     >
                       <CheckCircle size={16} />
@@ -543,7 +622,7 @@ export default function StudentCourseLessonsPage({ params }: { params: Promise<{
                     <button
                       onClick={handleMarkComplete}
                       disabled={marking}
-                      className="inline-flex items-center gap-2 px-4 py-2 rounded-xl gradient-primary text-white text-sm font-bold flex-shrink-0 hover:opacity-90 active:scale-95 transition-all disabled:opacity-60"
+                      className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl gradient-primary text-white text-sm font-bold flex-shrink-0 hover:opacity-90 active:scale-95 transition-all disabled:opacity-60"
                       style={{ fontFamily: font }}
                     >
                       {marking ? (
@@ -555,7 +634,6 @@ export default function StudentCourseLessonsPage({ params }: { params: Promise<{
                     </button>
                   )}
                 </div>
-
                 <div className="px-4 sm:px-6 py-3 flex items-center gap-2">
                   <Avatar url={course.teacher.avatarUrl} name={course.teacher.fullName} size={28} />
                   <span className="text-xs text-muted-foreground" style={{ fontFamily: font }}>
@@ -565,8 +643,7 @@ export default function StudentCourseLessonsPage({ params }: { params: Promise<{
                 </div>
               </>
             ) : (
-              // Video lesson but no video attached yet
-              <div className="flex-1 flex flex-col items-center justify-center gap-3 p-8">
+              <div className="flex-1 flex flex-col items-center justify-center gap-3 p-8 text-center">
                 <PlayCircle size={48} className="text-muted-foreground/30" />
                 <p className="text-muted-foreground text-sm" style={{ fontFamily: font }}>
                   {t.selectLesson}
@@ -575,13 +652,81 @@ export default function StudentCourseLessonsPage({ params }: { params: Promise<{
             )}
           </div>
 
-          {/* ── Sidebar ── */}
+          <div className="lg:hidden order-2 border-t border-border bg-card">
+            <button
+              onClick={() => setMobileListOpen((o) => !o)}
+              className="w-full flex items-center justify-between px-4 py-3 text-sm font-bold text-foreground"
+              style={{ fontFamily: font }}
+            >
+              <span className="flex items-center gap-2">
+                <List size={16} />
+                {mobileListOpen ? t.hideContent : t.showContent}
+                <span className="text-xs font-normal text-muted-foreground">
+                  ({completedCount}/{totalCount})
+                </span>
+              </span>
+              {mobileListOpen ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+            </button>
+            {mobileListOpen && (
+              <div className="max-h-[60vh] overflow-y-auto border-t border-border">
+                {sequencedLessons.length === 0 ? (
+                  <p
+                    className="p-4 text-xs text-muted-foreground text-center"
+                    style={{ fontFamily: font }}
+                  >
+                    {t.noLessons}
+                  </p>
+                ) : (
+                  sequencedLessons.map((lesson, index) => (
+                    <LessonRow
+                      key={lesson.id}
+                      lesson={lesson}
+                      index={index}
+                      sequencedLessons={sequencedLessons}
+                      isActive={activeLesson?.id === lesson.id}
+                      isRtl={isRtl}
+                      font={font}
+                      lockedMsg={t.locked}
+                      onClick={() => {
+                        setActiveLesson(lesson);
+                        setMobileListOpen(false);
+                      }}
+                    />
+                  ))
+                )}
+
+                {scheduledExams.length > 0 && (
+                  <>
+                    <div className="px-4 py-2 border-t border-border bg-muted/20">
+                      <p
+                        className="text-xs font-bold text-muted-foreground uppercase tracking-wide"
+                        style={{ fontFamily: font }}
+                      >
+                        {t.scheduledExamsTitle}
+                      </p>
+                    </div>
+                    {scheduledExams.map((lesson) => (
+                      <ScheduledExamRow
+                        key={lesson.id}
+                        lesson={lesson}
+                        isActive={activeLesson?.id === lesson.id}
+                        isRtl={isRtl}
+                        font={font}
+                        onClick={() => {
+                          setActiveLesson(lesson);
+                          setMobileListOpen(false);
+                        }}
+                      />
+                    ))}
+                  </>
+                )}
+              </div>
+            )}
+          </div>
+
           <div
-            className={`flex-shrink-0 border-s border-border bg-card flex flex-col transition-all duration-300 ${
-              sidebarOpen ? 'w-72' : 'w-12'
-            }`}
+            className={`hidden lg:flex flex-shrink-0 border-s border-border bg-card flex-col transition-all duration-300 order-3 ${sidebarOpen ? 'w-72' : 'w-12'}`}
           >
-            {/* Toggle */}
             <button
               onClick={() => setSidebarOpen((o) => !o)}
               className="flex items-center justify-center p-3 border-b border-border text-muted-foreground hover:text-foreground hover:bg-muted/40 transition-colors"
@@ -598,9 +743,8 @@ export default function StudentCourseLessonsPage({ params }: { params: Promise<{
                 <ChevronUp size={16} className="rotate-90" />
               )}
             </button>
-
             {sidebarOpen && (
-              <>
+              <div className="flex-1 overflow-y-auto">
                 <div className="px-4 py-3 border-b border-border">
                   <p
                     className="text-xs font-bold text-muted-foreground uppercase tracking-wide"
@@ -609,17 +753,41 @@ export default function StudentCourseLessonsPage({ params }: { params: Promise<{
                     {t.sidebarTitle}
                   </p>
                 </div>
-                <div className="flex-1 overflow-y-auto">
-                  {course.lessons.length === 0 ? (
-                    <p
-                      className="p-4 text-xs text-muted-foreground text-center"
-                      style={{ fontFamily: font }}
-                    >
-                      {t.noLessons}
-                    </p>
-                  ) : (
-                    course.lessons.map((lesson) => (
-                      <LessonRow
+                {sequencedLessons.length === 0 ? (
+                  <p
+                    className="p-4 text-xs text-muted-foreground text-center"
+                    style={{ fontFamily: font }}
+                  >
+                    {t.noLessons}
+                  </p>
+                ) : (
+                  sequencedLessons.map((lesson, index) => (
+                    <LessonRow
+                      key={lesson.id}
+                      lesson={lesson}
+                      index={index}
+                      sequencedLessons={sequencedLessons}
+                      isActive={activeLesson?.id === lesson.id}
+                      isRtl={isRtl}
+                      font={font}
+                      lockedMsg={t.locked}
+                      onClick={() => setActiveLesson(lesson)}
+                    />
+                  ))
+                )}
+
+                {scheduledExams.length > 0 && (
+                  <>
+                    <div className="px-4 py-3 border-t border-b border-border bg-muted/20">
+                      <p
+                        className="text-xs font-bold text-muted-foreground uppercase tracking-wide"
+                        style={{ fontFamily: font }}
+                      >
+                        {t.scheduledExamsTitle}
+                      </p>
+                    </div>
+                    {scheduledExams.map((lesson) => (
+                      <ScheduledExamRow
                         key={lesson.id}
                         lesson={lesson}
                         isActive={activeLesson?.id === lesson.id}
@@ -627,15 +795,14 @@ export default function StudentCourseLessonsPage({ params }: { params: Promise<{
                         font={font}
                         onClick={() => setActiveLesson(lesson)}
                       />
-                    ))
-                  )}
-                </div>
-              </>
+                    ))}
+                  </>
+                )}
+              </div>
             )}
           </div>
         </div>
       </main>
-
       <Footer lang={lang} />
     </div>
   );

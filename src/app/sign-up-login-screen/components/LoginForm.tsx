@@ -3,7 +3,7 @@
 import React, { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { Eye, EyeOff, Loader2, Phone } from 'lucide-react';
-import { toast } from 'sonner';
+import { notifySuccess } from '@/lib/notify';
 
 interface Props {
   lang: 'ar' | 'en';
@@ -80,7 +80,7 @@ export default function LoginForm({ lang, onSwitchToRegister }: Props) {
       if (!res.ok) {
         setError('phone', { message: result.error });
       } else {
-        toast.success(t.successMsg);
+        notifySuccess(t.successMsg);
         if (result.role === 'admin') {
           window.location.href = '/admin';
         } else if (result.role === 'teacher') {

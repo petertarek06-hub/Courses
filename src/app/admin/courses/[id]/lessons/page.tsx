@@ -29,6 +29,7 @@ import {
   CalendarClock,
   CalendarCheck2,
   CalendarX2,
+  ListOrdered,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAdminLang } from '../../../Adminshell';
@@ -37,7 +38,7 @@ import { useAdminLang } from '../../../Adminshell';
 interface VideoRecord {
   id: number;
   vimeoId: string;
-  durationSec: number | null;
+  description: string | null;
 }
 interface ExamQuestion {
   id: number;
@@ -71,7 +72,7 @@ interface QuestionBank {
   courseId: number;
 }
 
-type ActiveTab = 'videos' | 'questions' | 'exams';
+type ActiveTab = 'videos' | 'questions' | 'exams' | 'layout';
 
 // ─── i18n ─────────────────────────────────────────────────────
 const T = {
@@ -81,12 +82,14 @@ const T = {
     tabVideos: 'الفيديوهات',
     tabQuestions: 'بنك الأسئلة',
     tabExams: 'الامتحانات',
+    tabLayout: 'ترتيب الكورس',
     addVideo: 'إضافة فيديو',
     editVideo: 'تعديل الفيديو',
     titleLabel: 'عنوان الدرس',
     vimeoId: 'Vimeo ID',
     vimeoHint: 'الرقم من رابط الفيديو: vimeo.com/123456789',
-    duration: 'المدة (ثانية) — اختياري',
+    description: 'وصف الفيديو (اختياري)',
+    descriptionPlaceholder: 'وصف مختصر لمحتوى الفيديو...',
     noVideos: 'لا توجد فيديوهات بعد',
     addQuestion: 'إضافة سؤال',
     editQuestion: 'تعديل السؤال',
@@ -159,6 +162,12 @@ const T = {
     minutes: 'دقيقة',
     passing: 'للنجاح',
     searchQuestions: 'بحث في الأسئلة...',
+    layoutMainSequence: 'التسلسل الأساسي',
+    layoutMainSequenceHint: 'هذا هو الترتيب الذي يشاهده الطالب — كل عنصر يفتح بعد إكمال ما قبله',
+    layoutScheduledSection: 'الامتحانات المجدولة',
+    layoutScheduledHint: 'مستقلة عن التسلسل — لا تُقفل ولا تُفتح أي عنصر آخر',
+    noLessonsInSequence: 'لا توجد عناصر في التسلسل بعد',
+    noScheduledExams: 'لا توجد امتحانات مجدولة',
   },
   en: {
     back: 'Back to Courses',
@@ -166,12 +175,14 @@ const T = {
     tabVideos: 'Videos',
     tabQuestions: 'Question Bank',
     tabExams: 'Exams',
+    tabLayout: 'Course Layout',
     addVideo: 'Add Video',
     editVideo: 'Edit Video',
     titleLabel: 'Lesson Title',
     vimeoId: 'Vimeo ID',
     vimeoHint: 'Number from the video URL: vimeo.com/123456789',
-    duration: 'Duration (seconds) — optional',
+    description: 'Video description — optional',
+    descriptionPlaceholder: 'A short description of the video content...',
     noVideos: 'No videos yet',
     addQuestion: 'Add Question',
     editQuestion: 'Edit Question',
@@ -244,18 +255,20 @@ const T = {
     minutes: 'min',
     passing: 'to pass',
     searchQuestions: 'Search questions...',
+    layoutMainSequence: 'Main Sequence',
+    layoutMainSequenceHint:
+      'This is the order students see — each item unlocks after the one before it is completed',
+    layoutScheduledSection: 'Scheduled Exams',
+    layoutScheduledHint:
+      "Independent of the sequence — these don't gate or get gated by anything else",
+    noLessonsInSequence: 'No items in the sequence yet',
+    noScheduledExams: 'No scheduled exams',
   },
-} as const;
+};
 
 type TType = (typeof T)['ar'];
 
 // ─── Helpers ──────────────────────────────────────────────────
-function formatDuration(sec: number | null) {
-  if (!sec) return '—';
-  const m = Math.floor(sec / 60),
-    s = sec % 60;
-  return `${m}:${String(s).padStart(2, '0')}`;
-}
 function parseOptions(json: string): string[] {
   try {
     return JSON.parse(json);
@@ -607,22 +620,30 @@ export default function AdminCourseLessonsPage({ params }: { params: Promise<{ i
       </div>
 
       <div className="flex gap-1 bg-muted/40 p-1 rounded-2xl mb-4 sm:mb-6 w-fit overflow-x-auto max-w-full">
-        {(['videos', 'questions', 'exams'] as ActiveTab[]).map((tab) => {
+        {(['videos', 'questions', 'exams', 'layout'] as ActiveTab[]).map((tab) => {
           const icons = {
             videos: <Video size={14} className="sm:hidden" />,
             questions: <HelpCircle size={14} className="sm:hidden" />,
             exams: <ClipboardList size={14} className="sm:hidden" />,
+            layout: <ListOrdered size={14} className="sm:hidden" />,
           };
           const iconsDesktop = {
             videos: <Video size={15} className="hidden sm:block" />,
             questions: <HelpCircle size={15} className="hidden sm:block" />,
             exams: <ClipboardList size={15} className="hidden sm:block" />,
+            layout: <ListOrdered size={15} className="hidden sm:block" />,
           };
-          const labels = { videos: t.tabVideos, questions: t.tabQuestions, exams: t.tabExams };
+          const labels = {
+            videos: t.tabVideos,
+            questions: t.tabQuestions,
+            exams: t.tabExams,
+            layout: t.tabLayout,
+          };
           const counts = {
             videos: videoLessons.length,
             questions: questions.length,
             exams: examLessons.length,
+            layout: lessons.length,
           };
           return (
             <button
@@ -680,6 +701,17 @@ export default function AdminCourseLessonsPage({ params }: { params: Promise<{ i
           allTags={allTags}
         />
       )}
+      {activeTab === 'layout' && (
+        <LayoutTab
+          courseId={courseId}
+          lessons={lessons}
+          loading={loadingLessons}
+          onRefresh={fetchLessons}
+          lang={lang}
+          t={t}
+          font={font}
+        />
+      )}
     </>
   );
 }
@@ -706,14 +738,14 @@ function VideosTab({
 }) {
   const [showModal, setShowModal] = useState(false);
   const [editLesson, setEditLesson] = useState<Lesson | null>(null);
-  const [form, setForm] = useState({ title: '', vimeoId: '', durationSec: '' });
+  const [form, setForm] = useState({ title: '', vimeoId: '', description: '' });
   const [saving, setSaving] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Lesson | null>(null);
 
   const f = (k: string, v: string) => setForm((p) => ({ ...p, [k]: v }));
   const openAdd = () => {
     setEditLesson(null);
-    setForm({ title: '', vimeoId: '', durationSec: '' });
+    setForm({ title: '', vimeoId: '', description: '' });
     setShowModal(true);
   };
   const openEdit = (l: Lesson) => {
@@ -721,7 +753,7 @@ function VideosTab({
     setForm({
       title: l.title,
       vimeoId: l.video?.vimeoId ?? '',
-      durationSec: l.video?.durationSec ? String(l.video.durationSec) : '',
+      description: l.video?.description ?? '',
     });
     setShowModal(true);
   };
@@ -775,14 +807,6 @@ function VideosTab({
     });
     onRefresh();
   };
-  const reorder = async (l: Lesson, dir: 'up' | 'down') => {
-    await fetch('/api/admin/lessons', {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: l.id, action: 'reorder', direction: dir, courseId }),
-    });
-    onRefresh();
-  };
 
   return (
     <>
@@ -821,27 +845,11 @@ function VideosTab({
           </div>
         ) : (
           <div className="divide-y divide-border">
-            {lessons.map((lesson, idx) => (
+            {lessons.map((lesson) => (
               <div
                 key={lesson.id}
                 className="flex items-center gap-2 sm:gap-3 px-3 sm:px-5 py-2.5 sm:py-3.5 hover:bg-muted/20 transition-colors"
               >
-                <div className="flex flex-col gap-0.5 flex-shrink-0">
-                  <button
-                    onClick={() => reorder(lesson, 'up')}
-                    disabled={idx === 0}
-                    className="p-0.5 rounded text-muted-foreground hover:text-foreground disabled:opacity-20"
-                  >
-                    <ChevronUp size={13} />
-                  </button>
-                  <button
-                    onClick={() => reorder(lesson, 'down')}
-                    disabled={idx === lessons.length - 1}
-                    className="p-0.5 rounded text-muted-foreground hover:text-foreground disabled:opacity-20"
-                  >
-                    <ChevronDown size={13} />
-                  </button>
-                </div>
                 <span className="text-[10px] sm:text-xs font-bold text-muted-foreground w-4 sm:w-5 text-center">
                   {lesson.order}
                 </span>
@@ -869,10 +877,15 @@ function VideosTab({
                   {lesson.video && (
                     <span className="text-[10px] sm:text-xs text-muted-foreground" dir="ltr">
                       ID: {lesson.video.vimeoId}
-                      {lesson.video.durationSec
-                        ? ` · ${formatDuration(lesson.video.durationSec)}`
-                        : ''}
                     </span>
+                  )}
+                  {lesson.video?.description && (
+                    <p
+                      className="text-[10px] sm:text-xs text-muted-foreground truncate"
+                      style={{ fontFamily: font }}
+                    >
+                      {lesson.video.description}
+                    </p>
                   )}
                 </div>
                 <span
@@ -942,14 +955,13 @@ function VideosTab({
                 dir="ltr"
               />
             </Field>
-            <Field label={t.duration} font={font}>
-              <Inp
-                type="number"
-                min="0"
-                value={form.durationSec}
-                onChange={(v) => f('durationSec', v)}
-                placeholder="600"
-                dir="ltr"
+            <Field label={t.description} font={font}>
+              <Textarea
+                value={form.description}
+                onChange={(v) => f('description', v)}
+                placeholder={t.descriptionPlaceholder}
+                dir={lang === 'ar' ? 'rtl' : 'ltr'}
+                rows={3}
               />
             </Field>
           </div>
@@ -1622,15 +1634,6 @@ function ExamsTab({
     onRefresh();
   };
 
-  const reorder = async (l: Lesson, dir: 'up' | 'down') => {
-    await fetch('/api/admin/lessons', {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: l.id, action: 'reorder', direction: dir, courseId }),
-    });
-    onRefresh();
-  };
-
   const handleDelete = async () => {
     if (!deleteTarget) return;
     await fetch('/api/admin/lessons', {
@@ -1748,27 +1751,11 @@ function ExamsTab({
           </div>
         ) : (
           <div className="divide-y divide-border">
-            {lessons.map((lesson, idx) => (
+            {lessons.map((lesson) => (
               <div
                 key={lesson.id}
                 className="flex items-center gap-2 sm:gap-3 px-3 sm:px-5 py-3 sm:py-4 hover:bg-muted/20 transition-colors flex-wrap sm:flex-nowrap"
               >
-                <div className="flex flex-col gap-0.5 flex-shrink-0">
-                  <button
-                    onClick={() => reorder(lesson, 'up')}
-                    disabled={idx === 0}
-                    className="p-0.5 rounded text-muted-foreground hover:text-foreground disabled:opacity-20"
-                  >
-                    <ChevronUp size={13} />
-                  </button>
-                  <button
-                    onClick={() => reorder(lesson, 'down')}
-                    disabled={idx === lessons.length - 1}
-                    className="p-0.5 rounded text-muted-foreground hover:text-foreground disabled:opacity-20"
-                  >
-                    <ChevronDown size={13} />
-                  </button>
-                </div>
                 <span className="text-[10px] sm:text-xs font-bold text-muted-foreground w-4 sm:w-5 text-center">
                   {lesson.order}
                 </span>
@@ -2222,5 +2209,160 @@ function ExamsTab({
         </Modal>
       )}
     </>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════
+// LAYOUT TAB — unified reordering across videos + unscheduled exams,
+// with scheduled exams kept in their own independent section
+// ═══════════════════════════════════════════════════════════════
+function LayoutTab({
+  courseId,
+  lessons,
+  loading,
+  onRefresh,
+  lang,
+  t,
+  font,
+}: {
+  courseId: number;
+  lessons: Lesson[];
+  loading: boolean;
+  onRefresh: () => void;
+  lang: 'ar' | 'en';
+  t: TType;
+  font?: string;
+}) {
+  const reorder = async (l: Lesson, dir: 'up' | 'down') => {
+    await fetch('/api/admin/lessons', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: l.id, action: 'reorder', direction: dir, courseId }),
+    });
+    onRefresh();
+  };
+
+  const sequence = lessons
+    .filter((l) => l.type === 'video' || (l.type === 'exam' && !l.exam?.scheduledAt))
+    .sort((a, b) => a.order - b.order);
+
+  const scheduled = lessons
+    .filter((l) => l.type === 'exam' && !!l.exam?.scheduledAt)
+    .sort((a, b) => a.order - b.order);
+
+  const Row = ({ lesson, list }: { lesson: Lesson; list: Lesson[] }) => {
+    const idx = list.findIndex((l) => l.id === lesson.id);
+    return (
+      <div className="flex items-center gap-2 sm:gap-3 px-3 sm:px-5 py-2.5 sm:py-3 hover:bg-muted/20 transition-colors">
+        <div className="flex flex-col gap-0.5 flex-shrink-0">
+          <button
+            onClick={() => reorder(lesson, 'up')}
+            disabled={idx === 0}
+            className="p-0.5 rounded text-muted-foreground hover:text-foreground disabled:opacity-20"
+          >
+            <ChevronUp size={13} />
+          </button>
+          <button
+            onClick={() => reorder(lesson, 'down')}
+            disabled={idx === list.length - 1}
+            className="p-0.5 rounded text-muted-foreground hover:text-foreground disabled:opacity-20"
+          >
+            <ChevronDown size={13} />
+          </button>
+        </div>
+        <span className="text-[10px] sm:text-xs font-bold text-muted-foreground w-4 sm:w-5 text-center">
+          {idx + 1}
+        </span>
+        <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-lg bg-muted flex items-center justify-center flex-shrink-0">
+          {lesson.type === 'video' ? (
+            <Video size={15} className="text-primary" />
+          ) : (
+            <ClipboardList size={15} className="text-accent" />
+          )}
+        </div>
+        <p
+          className="flex-1 min-w-0 font-semibold text-foreground text-xs sm:text-sm truncate"
+          style={{ fontFamily: font }}
+        >
+          {lesson.title}
+        </p>
+      </div>
+    );
+  };
+
+  return (
+    <div className="flex flex-col gap-4 sm:gap-6">
+      <div className="bg-card rounded-2xl border border-border shadow-sm overflow-hidden">
+        <div className="px-3 sm:px-5 py-3 sm:py-4 border-b border-border">
+          <h2
+            className="font-bold text-foreground text-xs sm:text-sm flex items-center gap-1.5 sm:gap-2"
+            style={{ fontFamily: font }}
+          >
+            <ListOrdered size={15} className="text-primary" />
+            {t.layoutMainSequence}
+          </h2>
+          <p
+            className="text-[10px] sm:text-xs text-muted-foreground mt-1"
+            style={{ fontFamily: font }}
+          >
+            {t.layoutMainSequenceHint}
+          </p>
+        </div>
+        {loading ? (
+          <div className="py-12 flex justify-center">
+            <Loader2 size={24} className="animate-spin text-primary" />
+          </div>
+        ) : sequence.length === 0 ? (
+          <p
+            className="py-10 text-center text-xs sm:text-sm text-muted-foreground"
+            style={{ fontFamily: font }}
+          >
+            {t.noLessonsInSequence}
+          </p>
+        ) : (
+          <div className="divide-y divide-border">
+            {sequence.map((lesson) => (
+              <Row key={lesson.id} lesson={lesson} list={sequence} />
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="bg-card rounded-2xl border border-border shadow-sm overflow-hidden">
+        <div className="px-3 sm:px-5 py-3 sm:py-4 border-b border-border">
+          <h2
+            className="font-bold text-foreground text-xs sm:text-sm flex items-center gap-1.5 sm:gap-2"
+            style={{ fontFamily: font }}
+          >
+            <CalendarClock size={15} className="text-blue-500" />
+            {t.layoutScheduledSection}
+          </h2>
+          <p
+            className="text-[10px] sm:text-xs text-muted-foreground mt-1"
+            style={{ fontFamily: font }}
+          >
+            {t.layoutScheduledHint}
+          </p>
+        </div>
+        {loading ? (
+          <div className="py-12 flex justify-center">
+            <Loader2 size={24} className="animate-spin text-primary" />
+          </div>
+        ) : scheduled.length === 0 ? (
+          <p
+            className="py-10 text-center text-xs sm:text-sm text-muted-foreground"
+            style={{ fontFamily: font }}
+          >
+            {t.noScheduledExams}
+          </p>
+        ) : (
+          <div className="divide-y divide-border">
+            {scheduled.map((lesson) => (
+              <Row key={lesson.id} lesson={lesson} list={scheduled} />
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
   );
 }

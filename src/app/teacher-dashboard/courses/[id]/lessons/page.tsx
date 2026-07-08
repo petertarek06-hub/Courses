@@ -26,6 +26,10 @@ import {
   Check,
   HelpCircle,
   FileText,
+  CalendarClock,
+  CalendarCheck2,
+  CalendarX2,
+  ListOrdered,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useLang } from '@/lib/uselang';
@@ -36,7 +40,7 @@ import Footer from '@/components/Footer';
 interface VideoRecord {
   id: number;
   vimeoId: string;
-  durationSec: number | null;
+  description: string | null;
 }
 interface ExamQuestion {
   id: number;
@@ -48,6 +52,7 @@ interface ExamRecord {
   id: number;
   durationMinutes: number | null;
   passingScore: number;
+  scheduledAt: string | null; // ISO string from API
   examQuestions: ExamQuestion[];
 }
 interface Lesson {
@@ -69,7 +74,7 @@ interface QuestionBank {
   courseId: number;
 }
 
-type ActiveTab = 'videos' | 'questions' | 'exams';
+type ActiveTab = 'videos' | 'questions' | 'exams' | 'layout';
 
 // ─── i18n ────────────────────────────────────────────────────────
 const T = {
@@ -79,6 +84,7 @@ const T = {
     tabVideos: 'الفيديوهات',
     tabQuestions: 'بنك الأسئلة',
     tabExams: 'الامتحانات',
+    tabLayout: 'ترتيب الكورس',
     // Videos
     addVideo: 'إضافة فيديو',
     editVideo: 'تعديل الفيديو',
@@ -87,7 +93,8 @@ const T = {
     examNamePlaceholder: 'مثال: امتحان الفصل الأول',
     vimeoId: 'Vimeo ID',
     vimeoHint: 'الرقم من رابط الفيديو: vimeo.com/123456789',
-    duration: 'المدة (ثانية) — اختياري',
+    description: 'وصف الفيديو (اختياري)',
+    descriptionPlaceholder: 'وصف مختصر لمحتوى الفيديو...',
     noVideos: 'لا توجد فيديوهات بعد',
     // Questions
     addQuestion: 'إضافة سؤال',
@@ -118,6 +125,17 @@ const T = {
     editExam: 'تعديل الامتحان',
     durationMinutes: 'مدة الامتحان (دقيقة) — اختياري',
     passingScore: 'درجة النجاح (%)',
+    // ── Scheduling ──
+    scheduleLabel: 'موعد إتاحة الامتحان',
+    scheduleHint:
+      'اتركه فارغًا ليكون الامتحان متاحًا فورًا. إذا حُدِّد موعد، لن يرى الطلاب الامتحان قبله.',
+    scheduleNow: 'متاح فورًا',
+    scheduleLater: 'جدولة في وقت محدد',
+    scheduledFor: 'مجدول في',
+    schedulePast: 'الموعد مضى — الامتحان متاح الآن',
+    scheduleFuture: 'مجدول للمستقبل',
+    clearSchedule: 'إلغاء الجدولة',
+    // ──
     manageQuestions: 'إدارة أسئلة الامتحان',
     addFromBank: 'إضافة من البنك',
     examHasQuestions: 'أسئلة الامتحان',
@@ -151,6 +169,12 @@ const T = {
     minutes: 'دقيقة',
     passing: 'للنجاح',
     searchQuestions: 'بحث في الأسئلة...',
+    layoutMainSequence: 'التسلسل الأساسي',
+    layoutMainSequenceHint: 'هذا هو الترتيب الذي يشاهده الطالب — كل عنصر يفتح بعد إكمال ما قبله',
+    layoutScheduledSection: 'الامتحانات المجدولة',
+    layoutScheduledHint: 'مستقلة عن التسلسل — لا تُقفل ولا تُفتح أي عنصر آخر',
+    noLessonsInSequence: 'لا توجد عناصر في التسلسل بعد',
+    noScheduledExams: 'لا توجد امتحانات مجدولة',
   },
   en: {
     back: 'Back to Dashboard',
@@ -158,6 +182,7 @@ const T = {
     tabVideos: 'Videos',
     tabQuestions: 'Question Bank',
     tabExams: 'Exams',
+    tabLayout: 'Course Layout',
     addVideo: 'Add Video',
     editVideo: 'Edit Video',
     titleLabel: 'Lesson Title',
@@ -165,7 +190,8 @@ const T = {
     examNamePlaceholder: 'e.g. First Term Exam',
     vimeoId: 'Vimeo ID',
     vimeoHint: 'Number from the video URL: vimeo.com/123456789',
-    duration: 'Duration (seconds) — optional',
+    description: 'Video description — optional',
+    descriptionPlaceholder: 'A short description of the video content...',
     noVideos: 'No videos yet',
     addQuestion: 'Add Question',
     editQuestion: 'Edit Question',
@@ -196,6 +222,17 @@ const T = {
     editExam: 'Edit Exam',
     durationMinutes: 'Duration (minutes) — optional',
     passingScore: 'Passing score (%)',
+    // ── Scheduling ──
+    scheduleLabel: 'Exam availability',
+    scheduleHint:
+      'Leave unscheduled to make it available immediately. When a date is set, students cannot see the exam before that time.',
+    scheduleNow: 'Available immediately',
+    scheduleLater: 'Schedule for a specific time',
+    scheduledFor: 'Scheduled for',
+    schedulePast: 'Time has passed — exam is now live',
+    scheduleFuture: 'Scheduled (upcoming)',
+    clearSchedule: 'Clear schedule',
+    // ──
     manageQuestions: 'Manage exam questions',
     addFromBank: 'Add from bank',
     examHasQuestions: 'Exam questions',
@@ -228,22 +265,61 @@ const T = {
     minutes: 'min',
     passing: 'to pass',
     searchQuestions: 'Search questions...',
+    layoutMainSequence: 'Main Sequence',
+    layoutMainSequenceHint:
+      'This is the order students see — each item unlocks after the one before it is completed',
+    layoutScheduledSection: 'Scheduled Exams',
+    layoutScheduledHint:
+      "Independent of the sequence — these don't gate or get gated by anything else",
+    noLessonsInSequence: 'No items in the sequence yet',
+    noScheduledExams: 'No scheduled exams',
   },
-} as const;
+};
+
+type TType = (typeof T)['ar'];
 
 // ─── Helpers ─────────────────────────────────────────────────────
-function formatDuration(sec: number | null) {
-  if (!sec) return '—';
-  const m = Math.floor(sec / 60),
-    s = sec % 60;
-  return `${m}:${String(s).padStart(2, '0')}`;
-}
 function parseOptions(json: string): string[] {
   try {
     return JSON.parse(json);
   } catch {
     return [];
   }
+}
+
+/**
+ * Converts a JS Date → local datetime-local input value string
+ * e.g. "2025-07-04T08:00"
+ */
+function toDatetimeLocal(date: Date): string {
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return (
+    `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}` +
+    `T${pad(date.getHours())}:${pad(date.getMinutes())}`
+  );
+}
+
+/**
+ * Formats a stored ISO scheduledAt for display.
+ * Returns null if scheduledAt is null/undefined.
+ */
+function formatScheduledAt(iso: string | null | undefined, lang: 'ar' | 'en'): string | null {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return null;
+  return d.toLocaleString(lang === 'ar' ? 'ar-EG' : 'en-GB', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
+/** Returns true if the exam is currently available (no schedule, or schedule is in the past). */
+function isExamLive(scheduledAt: string | null | undefined): boolean {
+  if (!scheduledAt) return true;
+  return new Date(scheduledAt) <= new Date();
 }
 
 // ─── Reusable UI pieces ──────────────────────────────────────────
@@ -372,7 +448,7 @@ function ActionButtons({
   onSave: () => void;
   saving: boolean;
   font?: string;
-  t: (typeof T)['ar'];
+  t: TType;
 }) {
   return (
     <div className="flex items-center justify-end gap-2 pt-4 border-t border-border mt-4 flex-shrink-0">
@@ -402,7 +478,7 @@ function QTypeBadge({
   font,
 }: {
   type: 'mcq' | 'true_false' | 'essay' | string;
-  t: (typeof T)['ar'];
+  t: TType;
   font?: string;
 }) {
   if (type === 'mcq')
@@ -430,6 +506,48 @@ function QTypeBadge({
       style={{ fontFamily: font }}
     >
       {t.essay}
+    </span>
+  );
+}
+
+// ── ScheduleBadge — shown on each exam card in the list ───────
+function ScheduleBadge({
+  scheduledAt,
+  t,
+  lang,
+  font,
+}: {
+  scheduledAt: string | null | undefined;
+  t: TType;
+  lang: 'ar' | 'en';
+  font?: string;
+}) {
+  if (!scheduledAt) return null;
+
+  const live = isExamLive(scheduledAt);
+  const label = formatScheduledAt(scheduledAt, lang);
+
+  if (live) {
+    return (
+      <span
+        className="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold bg-green-50 text-green-600 border border-green-200"
+        style={{ fontFamily: font }}
+        title={`${t.scheduledFor}: ${label}`}
+      >
+        <CalendarCheck2 size={11} />
+        {t.schedulePast}
+      </span>
+    );
+  }
+
+  return (
+    <span
+      className="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold bg-amber-50 text-amber-600 border border-amber-200"
+      style={{ fontFamily: font }}
+      title={`${t.scheduledFor}: ${label}`}
+    >
+      <CalendarClock size={11} />
+      {label}
     </span>
   );
 }
@@ -510,24 +628,31 @@ export default function CourseLessonsPage({ params }: { params: Promise<{ id: st
         </div>
 
         {/* Tabs */}
-        <div className="flex gap-1 bg-muted/40 p-1 rounded-2xl mb-6 w-fit">
-          {(['videos', 'questions', 'exams'] as ActiveTab[]).map((tab) => {
+        <div className="flex gap-1 bg-muted/40 p-1 rounded-2xl mb-6 w-fit overflow-x-auto max-w-full">
+          {(['videos', 'questions', 'exams', 'layout'] as ActiveTab[]).map((tab) => {
             const icons = {
               videos: <Video size={15} />,
               questions: <HelpCircle size={15} />,
               exams: <ClipboardList size={15} />,
+              layout: <ListOrdered size={15} />,
             };
-            const labels = { videos: t.tabVideos, questions: t.tabQuestions, exams: t.tabExams };
+            const labels = {
+              videos: t.tabVideos,
+              questions: t.tabQuestions,
+              exams: t.tabExams,
+              layout: t.tabLayout,
+            };
             const counts = {
               videos: videoLessons.length,
               questions: questions.length,
               exams: examLessons.length,
+              layout: lessons.length,
             };
             return (
               <button
                 key={tab}
                 onClick={() => setActiveTab(tab)}
-                className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all ${activeTab === tab ? 'bg-card text-primary shadow border border-border' : 'text-muted-foreground hover:text-foreground'}`}
+                className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all whitespace-nowrap ${activeTab === tab ? 'bg-card text-primary shadow border border-border' : 'text-muted-foreground hover:text-foreground'}`}
                 style={{ fontFamily: font }}
               >
                 {icons[tab]} {labels[tab]}
@@ -546,7 +671,6 @@ export default function CourseLessonsPage({ params }: { params: Promise<{ id: st
           <VideosTab
             courseId={courseId}
             lessons={videoLessons}
-            allLessons={lessons}
             loading={loadingLessons}
             onRefresh={fetchLessons}
             lang={lang}
@@ -570,7 +694,6 @@ export default function CourseLessonsPage({ params }: { params: Promise<{ id: st
           <ExamsTab
             courseId={courseId}
             lessons={examLessons}
-            allLessons={lessons}
             questions={questions}
             loading={loadingLessons}
             onRefresh={fetchLessons}
@@ -578,6 +701,17 @@ export default function CourseLessonsPage({ params }: { params: Promise<{ id: st
             t={t}
             font={font}
             allTags={allTags}
+          />
+        )}
+        {activeTab === 'layout' && (
+          <LayoutTab
+            courseId={courseId}
+            lessons={lessons}
+            loading={loadingLessons}
+            onRefresh={fetchLessons}
+            lang={lang}
+            t={t}
+            font={font}
           />
         )}
       </main>
@@ -588,12 +722,11 @@ export default function CourseLessonsPage({ params }: { params: Promise<{ id: st
 }
 
 // ═══════════════════════════════════════════════════════════════
-// VIDEOS TAB  (unchanged from original)
+// VIDEOS TAB
 // ═══════════════════════════════════════════════════════════════
 function VideosTab({
   courseId,
   lessons,
-  allLessons,
   loading,
   onRefresh,
   lang,
@@ -602,16 +735,15 @@ function VideosTab({
 }: {
   courseId: number;
   lessons: Lesson[];
-  allLessons: Lesson[];
   loading: boolean;
   onRefresh: () => void;
   lang: 'ar' | 'en';
-  t: (typeof T)['ar'];
+  t: TType;
   font?: string;
 }) {
   const [showModal, setShowModal] = useState(false);
   const [editLesson, setEditLesson] = useState<Lesson | null>(null);
-  const [form, setForm] = useState({ title: '', vimeoId: '', durationSec: '' });
+  const [form, setForm] = useState({ title: '', vimeoId: '', description: '' });
   const [saving, setSaving] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Lesson | null>(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
@@ -620,7 +752,7 @@ function VideosTab({
 
   const openAdd = () => {
     setEditLesson(null);
-    setForm({ title: '', vimeoId: '', durationSec: '' });
+    setForm({ title: '', vimeoId: '', description: '' });
     setShowModal(true);
   };
   const openEdit = (l: Lesson) => {
@@ -628,7 +760,7 @@ function VideosTab({
     setForm({
       title: l.title,
       vimeoId: l.video?.vimeoId ?? '',
-      durationSec: l.video?.durationSec ? String(l.video.durationSec) : '',
+      description: l.video?.description ?? '',
     });
     setShowModal(true);
   };
@@ -688,15 +820,6 @@ function VideosTab({
     onRefresh();
   };
 
-  const reorder = async (l: Lesson, dir: 'up' | 'down') => {
-    await fetch('/api/admin/lessons', {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: l.id, action: 'reorder', direction: dir, courseId }),
-    });
-    onRefresh();
-  };
-
   return (
     <>
       <div className="bg-card rounded-2xl border border-border shadow-sm overflow-hidden">
@@ -729,27 +852,11 @@ function VideosTab({
           </div>
         ) : (
           <div className="divide-y divide-border">
-            {lessons.map((lesson, idx) => (
+            {lessons.map((lesson) => (
               <div
                 key={lesson.id}
                 className="flex items-center gap-3 px-5 py-3.5 hover:bg-muted/20 transition-colors"
               >
-                <div className="flex flex-col gap-0.5 flex-shrink-0">
-                  <button
-                    onClick={() => reorder(lesson, 'up')}
-                    disabled={idx === 0}
-                    className="p-0.5 rounded text-muted-foreground hover:text-foreground disabled:opacity-20"
-                  >
-                    <ChevronUp size={14} />
-                  </button>
-                  <button
-                    onClick={() => reorder(lesson, 'down')}
-                    disabled={idx === lessons.length - 1}
-                    className="p-0.5 rounded text-muted-foreground hover:text-foreground disabled:opacity-20"
-                  >
-                    <ChevronDown size={14} />
-                  </button>
-                </div>
                 <span className="text-xs font-bold text-muted-foreground w-5 text-center flex-shrink-0">
                   {lesson.order}
                 </span>
@@ -777,10 +884,15 @@ function VideosTab({
                   {lesson.video && (
                     <span className="text-xs text-muted-foreground" dir="ltr">
                       ID: {lesson.video.vimeoId}
-                      {lesson.video.durationSec
-                        ? ` · ${formatDuration(lesson.video.durationSec)}`
-                        : ''}
                     </span>
+                  )}
+                  {lesson.video?.description && (
+                    <p
+                      className="text-xs text-muted-foreground truncate"
+                      style={{ fontFamily: font }}
+                    >
+                      {lesson.video.description}
+                    </p>
                   )}
                 </div>
                 <span
@@ -848,14 +960,13 @@ function VideosTab({
                 dir="ltr"
               />
             </Field>
-            <Field label={t.duration} font={font}>
-              <Inp
-                type="number"
-                min="0"
-                value={form.durationSec}
-                onChange={(v) => f('durationSec', v)}
-                placeholder="600"
-                dir="ltr"
+            <Field label={t.description} font={font}>
+              <Textarea
+                value={form.description}
+                onChange={(v) => f('description', v)}
+                placeholder={t.descriptionPlaceholder}
+                dir={lang === 'ar' ? 'rtl' : 'ltr'}
+                rows={3}
               />
             </Field>
           </div>
@@ -906,7 +1017,7 @@ type QForm = {
   type: 'mcq' | 'true_false' | 'essay';
   options: string[];
   correctAnswer: string;
-  gradingNotes: string; // ← new: instructor notes for essay grading
+  gradingNotes: string;
   lessonTag: string;
 };
 const emptyQForm = (): QForm => ({
@@ -933,7 +1044,7 @@ function QuestionsTab({
   loading: boolean;
   onRefresh: () => void;
   lang: 'ar' | 'en';
-  t: (typeof T)['ar'];
+  t: TType;
   font?: string;
   allTags: string[];
 }) {
@@ -957,7 +1068,6 @@ function QuestionsTab({
 
   const openEdit = (q: QuestionBank) => {
     setEditQ(q);
-    // For essay, gradingNotes is stored in correctAnswer field
     const isEssay = q.type === 'essay';
     setForm({
       text: q.text,
@@ -986,7 +1096,6 @@ function QuestionsTab({
 
     setSaving(true);
 
-    // For essay: store grading notes in correctAnswer, empty array in optionsJson
     const payload = {
       courseId,
       text: form.text,
@@ -997,10 +1106,7 @@ function QuestionsTab({
           : form.type === 'true_false'
             ? JSON.stringify([t.true, t.false])
             : JSON.stringify(form.options.filter((o) => o.trim())),
-      correctAnswer:
-        form.type === 'essay'
-          ? form.gradingNotes // grading notes live in correctAnswer column
-          : form.correctAnswer,
+      correctAnswer: form.type === 'essay' ? form.gradingNotes : form.correctAnswer,
       lessonTag: form.lessonTag,
     };
 
@@ -1069,7 +1175,6 @@ function QuestionsTab({
           </button>
         </div>
 
-        {/* Filters */}
         <div className="flex flex-wrap gap-2 px-5 py-3 border-b border-border bg-muted/20">
           <div className="relative flex-1 min-w-[160px]">
             <Search
@@ -1100,7 +1205,6 @@ function QuestionsTab({
               ))}
             </select>
           </div>
-          {/* Type filter */}
           <select
             value={filterType}
             onChange={(e) => setFilterType(e.target.value)}
@@ -1151,7 +1255,6 @@ function QuestionsTab({
                         {q.text}
                       </p>
 
-                      {/* MCQ / True-False options */}
                       {!isEssay && opts.length > 0 && (
                         <div className="flex flex-wrap gap-1.5 mt-2">
                           {opts.map((opt, oi) => (
@@ -1169,7 +1272,6 @@ function QuestionsTab({
                         </div>
                       )}
 
-                      {/* Essay grading notes preview */}
                       {isEssay && (
                         <div className="mt-2 flex items-start gap-1.5">
                           <FileText size={12} className="text-amber-500 mt-0.5 flex-shrink-0" />
@@ -1208,7 +1310,6 @@ function QuestionsTab({
         )}
       </div>
 
-      {/* ── Question form modal ── */}
       {showModal && (
         <Modal
           onClose={() => setShowModal(false)}
@@ -1250,7 +1351,6 @@ function QuestionsTab({
               )}
             </Field>
 
-            {/* ── Question type selector — now 3 buttons ── */}
             <Field label={t.questionType} font={font}>
               <div className="grid grid-cols-3 gap-2">
                 {(['mcq', 'true_false', 'essay'] as const).map((type) => {
@@ -1282,7 +1382,6 @@ function QuestionsTab({
               </div>
             </Field>
 
-            {/* ── MCQ options ── */}
             {form.type === 'mcq' && (
               <div className="flex flex-col gap-2">
                 <label
@@ -1348,7 +1447,6 @@ function QuestionsTab({
               </div>
             )}
 
-            {/* ── True/False ── */}
             {form.type === 'true_false' && (
               <Field label={t.correctAnswer} font={font}>
                 <div className="flex gap-2">
@@ -1366,10 +1464,8 @@ function QuestionsTab({
               </Field>
             )}
 
-            {/* ── Essay ── */}
             {form.type === 'essay' && (
               <>
-                {/* Info banner */}
                 <div className="flex items-start gap-2 px-3 py-2.5 rounded-xl bg-amber-50 border border-amber-200">
                   <FileText size={15} className="text-amber-600 mt-0.5 flex-shrink-0" />
                   <p
@@ -1379,7 +1475,6 @@ function QuestionsTab({
                     {t.essayNote}
                   </p>
                 </div>
-                {/* Grading notes */}
                 <Field label={t.gradingNotes} hint={t.gradingNotesHint} font={font}>
                   <Textarea
                     value={form.gradingNotes}
@@ -1402,7 +1497,6 @@ function QuestionsTab({
         </Modal>
       )}
 
-      {/* Delete modal */}
       {deleteTarget && (
         <Modal onClose={() => setDeleteTarget(null)} title={t.delete} font={font}>
           <p className="text-sm text-muted-foreground mb-6" style={{ fontFamily: font }}>
@@ -1432,13 +1526,11 @@ function QuestionsTab({
 }
 
 // ═══════════════════════════════════════════════════════════════
-// EXAMS TAB  — essay questions excluded from bank picker
-// each exam question now has an editable "mark" (default 1)
+// EXAMS TAB — with scheduledAt scheduling feature
 // ═══════════════════════════════════════════════════════════════
 function ExamsTab({
   courseId,
   lessons,
-  allLessons,
   questions,
   loading,
   onRefresh,
@@ -1449,12 +1541,11 @@ function ExamsTab({
 }: {
   courseId: number;
   lessons: Lesson[];
-  allLessons: Lesson[];
   questions: QuestionBank[];
   loading: boolean;
   onRefresh: () => void;
   lang: 'ar' | 'en';
-  t: (typeof T)['ar'];
+  t: TType;
   font?: string;
   allTags: string[];
 }) {
@@ -1462,15 +1553,13 @@ function ExamsTab({
   const [showModal, setShowModal] = useState(false);
   const [editLesson, setEditLesson] = useState<Lesson | null>(null);
   const [form, setForm] = useState({ title: '', durationMinutes: '', passingScore: '50' });
+  const [scheduledValue, setScheduledValue] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Lesson | null>(null);
   const [manageLesson, setManageLesson] = useState<Lesson | null>(null);
   const [bankFilter, setBankFilter] = useState('');
   const [selectedBankIds, setSelectedBankIds] = useState<Set<number>>(new Set());
   const [addingQs, setAddingQs] = useState(false);
-  // Local draft values for the mark inputs, keyed by examQuestion id.
-  // Lets the user type freely without firing a request on every keystroke;
-  // the value is committed to the API on blur.
   const [markDrafts, setMarkDrafts] = useState<Record<number, string>>({});
 
   const f = (k: string, v: string) => setForm((p) => ({ ...p, [k]: v }));
@@ -1478,6 +1567,7 @@ function ExamsTab({
   const openAdd = () => {
     setEditLesson(null);
     setForm({ title: '', durationMinutes: '', passingScore: '50' });
+    setScheduledValue(null);
     setShowModal(true);
   };
   const openEdit = (l: Lesson) => {
@@ -1487,6 +1577,12 @@ function ExamsTab({
       durationMinutes: l.exam?.durationMinutes ? String(l.exam.durationMinutes) : '',
       passingScore: String(l.exam?.passingScore ?? 50),
     });
+    if (l.exam?.scheduledAt) {
+      const d = new Date(l.exam.scheduledAt);
+      setScheduledValue(isNaN(d.getTime()) ? null : toDatetimeLocal(d));
+    } else {
+      setScheduledValue(null);
+    }
     setShowModal(true);
   };
 
@@ -1497,10 +1593,15 @@ function ExamsTab({
     }
     setSaving(true);
     try {
+      const scheduledAt: string | null = scheduledValue
+        ? new Date(scheduledValue).toISOString()
+        : null;
+
       const payload = {
         title: form.title,
         durationMinutes: form.durationMinutes,
         passingScore: form.passingScore,
+        scheduledAt,
       };
       if (editLesson) {
         await fetch('/api/admin/lessons', {
@@ -1530,14 +1631,6 @@ function ExamsTab({
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ id: l.id, action: 'toggleVisibility' }),
-    });
-    onRefresh();
-  };
-  const reorder = async (l: Lesson, dir: 'up' | 'down') => {
-    await fetch('/api/admin/lessons', {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: l.id, action: 'reorder', direction: dir, courseId }),
     });
     onRefresh();
   };
@@ -1602,7 +1695,6 @@ function ExamsTab({
     onRefresh();
   };
 
-  // Persists a question's mark via the API, then refreshes the lesson list.
   const handleUpdateMark = async (lessonId: number, eqId: number, mark: number) => {
     await fetch('/api/admin/lessons', {
       method: 'PATCH',
@@ -1621,11 +1713,12 @@ function ExamsTab({
     ? (lessons.find((l) => l.id === manageLesson.id) ?? null)
     : null;
 
-  // ── Essay questions are excluded from auto-graded exams ──
   const filteredBank = questions.filter((q) => {
     const inExam = currentManage?.exam?.examQuestions.some((eq) => eq.question.id === q.id);
     return !inExam && (!bankFilter || q.lessonTag === bankFilter);
   });
+
+  const minDatetimeLocal = toDatetimeLocal(new Date());
 
   return (
     <>
@@ -1659,27 +1752,11 @@ function ExamsTab({
           </div>
         ) : (
           <div className="divide-y divide-border">
-            {lessons.map((lesson, idx) => (
+            {lessons.map((lesson) => (
               <div
                 key={lesson.id}
-                className="flex items-center gap-3 px-5 py-4 hover:bg-muted/20 transition-colors"
+                className="flex items-center gap-3 px-5 py-4 hover:bg-muted/20 transition-colors flex-wrap sm:flex-nowrap"
               >
-                <div className="flex flex-col gap-0.5 flex-shrink-0">
-                  <button
-                    onClick={() => reorder(lesson, 'up')}
-                    disabled={idx === 0}
-                    className="p-0.5 rounded text-muted-foreground hover:text-foreground disabled:opacity-20"
-                  >
-                    <ChevronUp size={14} />
-                  </button>
-                  <button
-                    onClick={() => reorder(lesson, 'down')}
-                    disabled={idx === lessons.length - 1}
-                    className="p-0.5 rounded text-muted-foreground hover:text-foreground disabled:opacity-20"
-                  >
-                    <ChevronDown size={14} />
-                  </button>
-                </div>
                 <span className="text-xs font-bold text-muted-foreground w-5 text-center flex-shrink-0">
                   {lesson.order}
                 </span>
@@ -1710,6 +1787,14 @@ function ExamsTab({
                     </span>
                   </div>
                 </div>
+
+                <ScheduleBadge
+                  scheduledAt={lesson.exam?.scheduledAt}
+                  t={t}
+                  lang={lang}
+                  font={font}
+                />
+
                 <span
                   className={`hidden sm:flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold ${lesson.isVisible ? 'bg-green-500/10 text-green-600' : 'bg-muted text-muted-foreground'}`}
                   style={{ fontFamily: font }}
@@ -1793,6 +1878,69 @@ function ExamsTab({
                 dir="ltr"
               />
             </Field>
+
+            <Field label={t.scheduleLabel} hint={t.scheduleHint} font={font}>
+              <div className="grid grid-cols-2 gap-2 mb-2">
+                <button
+                  type="button"
+                  onClick={() => setScheduledValue(null)}
+                  className={`flex items-center justify-center gap-1.5 py-2 rounded-xl border text-xs font-bold transition-all ${scheduledValue === null ? 'border-primary bg-primary/10 text-primary' : 'border-border text-muted-foreground hover:border-primary/30'}`}
+                  style={{ fontFamily: font }}
+                >
+                  <CalendarCheck2 size={13} />
+                  {t.scheduleNow}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (scheduledValue === null) {
+                      const tomorrow = new Date();
+                      tomorrow.setDate(tomorrow.getDate() + 1);
+                      tomorrow.setHours(8, 0, 0, 0);
+                      setScheduledValue(toDatetimeLocal(tomorrow));
+                    }
+                  }}
+                  className={`flex items-center justify-center gap-1.5 py-2 rounded-xl border text-xs font-bold transition-all ${scheduledValue !== null ? 'border-primary bg-primary/10 text-primary' : 'border-border text-muted-foreground hover:border-primary/30'}`}
+                  style={{ fontFamily: font }}
+                >
+                  <CalendarClock size={13} />
+                  {t.scheduleLater}
+                </button>
+              </div>
+
+              {scheduledValue !== null && (
+                <div className="flex flex-col gap-2">
+                  <input
+                    type="datetime-local"
+                    value={scheduledValue}
+                    min={minDatetimeLocal}
+                    onChange={(e) => setScheduledValue(e.target.value || null)}
+                    className="w-full px-3 py-2 rounded-xl border border-border bg-background text-foreground text-sm outline-none focus:ring-2 focus:ring-primary/30 transition-all"
+                    dir="ltr"
+                  />
+                  {scheduledValue && (
+                    <div className="flex items-center justify-between flex-wrap gap-1.5">
+                      <p
+                        className="text-xs text-primary font-semibold flex items-center gap-1"
+                        style={{ fontFamily: font }}
+                      >
+                        <CalendarClock size={11} />
+                        {formatScheduledAt(new Date(scheduledValue).toISOString(), lang)}
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => setScheduledValue(null)}
+                        className="text-xs text-muted-foreground hover:text-red-500 flex items-center gap-1 transition-colors"
+                        style={{ fontFamily: font }}
+                      >
+                        <CalendarX2 size={11} />
+                        {t.clearSchedule}
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+            </Field>
           </div>
           <ActionButtons
             onClose={() => setShowModal(false)}
@@ -1838,7 +1986,6 @@ function ExamsTab({
           wide
         >
           <div className="flex flex-col gap-5">
-            {/* Current exam questions */}
             <div>
               <h3
                 className="text-sm font-bold text-foreground mb-2 flex items-center gap-2 flex-wrap"
@@ -1900,7 +2047,6 @@ function ExamsTab({
                       </div>
                       <QTypeBadge type={eq.question.type} t={t} font={font} />
 
-                      {/* Mark input — defaults to 1, editable inline, committed on blur */}
                       <div className="flex items-center gap-1 flex-shrink-0">
                         <input
                           type="number"
@@ -1945,7 +2091,6 @@ function ExamsTab({
               )}
             </div>
 
-            {/* Add from bank */}
             <div>
               <h3
                 className="text-sm font-bold text-foreground mb-1 flex items-center gap-2"
@@ -1953,7 +2098,6 @@ function ExamsTab({
               >
                 <HelpCircle size={14} className="text-secondary" /> {t.addFromBank}
               </h3>
-              {/* Notice about essay exclusion */}
               <p
                 className="text-xs text-muted-foreground mb-2 flex items-center gap-1"
                 style={{ fontFamily: font }}
@@ -2044,5 +2188,154 @@ function ExamsTab({
         </Modal>
       )}
     </>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════
+// LAYOUT TAB — unified reordering across videos + unscheduled exams,
+// with scheduled exams kept in their own independent section
+// ═══════════════════════════════════════════════════════════════
+function LayoutTab({
+  courseId,
+  lessons,
+  loading,
+  onRefresh,
+  lang,
+  t,
+  font,
+}: {
+  courseId: number;
+  lessons: Lesson[];
+  loading: boolean;
+  onRefresh: () => void;
+  lang: 'ar' | 'en';
+  t: TType;
+  font?: string;
+}) {
+  const reorder = async (l: Lesson, dir: 'up' | 'down') => {
+    await fetch('/api/admin/lessons', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: l.id, action: 'reorder', direction: dir, courseId }),
+    });
+    onRefresh();
+  };
+
+  const sequence = lessons
+    .filter((l) => l.type === 'video' || (l.type === 'exam' && !l.exam?.scheduledAt))
+    .sort((a, b) => a.order - b.order);
+
+  const scheduled = lessons
+    .filter((l) => l.type === 'exam' && !!l.exam?.scheduledAt)
+    .sort((a, b) => a.order - b.order);
+
+  const Row = ({ lesson, list }: { lesson: Lesson; list: Lesson[] }) => {
+    const idx = list.findIndex((l) => l.id === lesson.id);
+    return (
+      <div className="flex items-center gap-3 px-5 py-3 hover:bg-muted/20 transition-colors">
+        <div className="flex flex-col gap-0.5 flex-shrink-0">
+          <button
+            onClick={() => reorder(lesson, 'up')}
+            disabled={idx === 0}
+            className="p-0.5 rounded text-muted-foreground hover:text-foreground disabled:opacity-20"
+          >
+            <ChevronUp size={14} />
+          </button>
+          <button
+            onClick={() => reorder(lesson, 'down')}
+            disabled={idx === list.length - 1}
+            className="p-0.5 rounded text-muted-foreground hover:text-foreground disabled:opacity-20"
+          >
+            <ChevronDown size={14} />
+          </button>
+        </div>
+        <span className="text-xs font-bold text-muted-foreground w-5 text-center flex-shrink-0">
+          {idx + 1}
+        </span>
+        <div className="w-9 h-9 rounded-lg bg-muted flex items-center justify-center flex-shrink-0">
+          {lesson.type === 'video' ? (
+            <Video size={16} className="text-primary" />
+          ) : (
+            <ClipboardList size={16} className="text-accent" />
+          )}
+        </div>
+        <p
+          className="flex-1 min-w-0 font-semibold text-foreground text-sm truncate"
+          style={{ fontFamily: font }}
+        >
+          {lesson.title}
+        </p>
+      </div>
+    );
+  };
+
+  return (
+    <div className="flex flex-col gap-6">
+      <div className="bg-card rounded-2xl border border-border shadow-sm overflow-hidden">
+        <div className="px-5 py-4 border-b border-border">
+          <h2
+            className="font-bold text-foreground text-sm flex items-center gap-2"
+            style={{ fontFamily: font }}
+          >
+            <ListOrdered size={16} className="text-primary" />
+            {t.layoutMainSequence}
+          </h2>
+          <p className="text-xs text-muted-foreground mt-1" style={{ fontFamily: font }}>
+            {t.layoutMainSequenceHint}
+          </p>
+        </div>
+        {loading ? (
+          <div className="py-16 flex justify-center">
+            <Loader2 size={28} className="animate-spin text-primary" />
+          </div>
+        ) : sequence.length === 0 ? (
+          <p
+            className="py-10 text-center text-sm text-muted-foreground"
+            style={{ fontFamily: font }}
+          >
+            {t.noLessonsInSequence}
+          </p>
+        ) : (
+          <div className="divide-y divide-border">
+            {sequence.map((lesson) => (
+              <Row key={lesson.id} lesson={lesson} list={sequence} />
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="bg-card rounded-2xl border border-border shadow-sm overflow-hidden">
+        <div className="px-5 py-4 border-b border-border">
+          <h2
+            className="font-bold text-foreground text-sm flex items-center gap-2"
+            style={{ fontFamily: font }}
+          >
+            <CalendarClock size={16} className="text-blue-500" />
+            {t.layoutScheduledSection}
+          </h2>
+          <p className="text-xs text-muted-foreground mt-1" style={{ fontFamily: font }}>
+            {t.layoutScheduledHint}
+          </p>
+        </div>
+        {loading ? (
+          <div className="py-16 flex justify-center">
+            <Loader2 size={28} className="animate-spin text-primary" />
+          </div>
+        ) : scheduled.length === 0 ? (
+          <p
+            className="py-10 text-center text-sm text-muted-foreground"
+            style={{ fontFamily: font }}
+          >
+            {t.noScheduledExams}
+          </p>
+        ) : (
+          <div className="divide-y divide-border">
+            {scheduled.map((lesson) => (
+              <Row key={lesson.id} lesson={lesson} list={scheduled} />
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
   );
 }

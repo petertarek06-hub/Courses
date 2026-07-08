@@ -178,9 +178,7 @@ export default function teacherDashboardPage() {
                     </span>
                   </div>
                   <button
-                    onClick={() =>
-                      router.push(`/instructor-dashboard/courses/${course.id}/lessons`)
-                    }
+                    onClick={() => router.push(`/teacher-dashboard/courses/${course.id}/lessons`)}
                     className="mt-auto flex items-center justify-center gap-2 w-full py-2 rounded-xl gradient-primary text-white text-xs font-bold hover:opacity-90 active:scale-95 transition-all"
                     style={{ fontFamily: font }}
                   >

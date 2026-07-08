@@ -2,7 +2,7 @@
 import React from 'react';
 import Link from 'next/link';
 import { UserPlus, BookOpen, PlayCircle, TrendingUp } from 'lucide-react';
-import Icon from '@/components/ui/AppIcon';
+// import Icon from '@/components/ui/AppIcon';
 
 interface Props {
   lang: 'ar' | 'en';
@@ -156,7 +156,7 @@ export default function HowItWorksSection({ lang }: Props) {
                 {index < t.steps.length - 1 && (
                   <div className="hidden lg:block absolute top-1/2 -translate-y-1/2 -end-4 z-10 text-primary/40">
                     <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-                      <path d={isRtl ? 'M11 8L5 4v8z' : 'M5 8l6-4v8z'} />
+                      <path d={isRtl ? 'M5 8l6-4v8z' : 'M11 8L5 4v8z'} />
                     </svg>
                   </div>
                 )}

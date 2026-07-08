@@ -1,68 +1,38 @@
-// src/app/api/student/course/[id]/exam/[examId]/route.ts
+// src/app/api/student/exam/[lessonId]/route.ts
 import { NextRequest, NextResponse } from 'next/server';
-import { getAuthUser } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
+import { getAuthUser } from '@/lib/auth';
 
-type Params = Promise<{ id: string; examId: string }>;
-
-// ── GET: fetch exam questions (shuffled) for a student to take ──
-export async function GET(req: NextRequest, { params }: { params: Params }) {
+// ── GET /api/student/exam/[lessonId] ─────────────────────────────
+// Returns exam metadata + questions (no correctAnswer exposed to student)
+export async function GET(req: NextRequest, { params }: { params: Promise<{ lessonId: string }> }) {
   const user = await getAuthUser();
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-  const { id, examId } = await params;
-  const courseId = Number(id);
-  const examIdNum = Number(examId);
+  const { lessonId } = await params;
+  const lessonIdNum = Number(lessonId);
 
-  if (!courseId || !examIdNum)
-    return NextResponse.json({ error: 'Invalid params' }, { status: 400 });
+  if (!lessonIdNum) return NextResponse.json({ error: 'Invalid lessonId' }, { status: 400 });
 
-  // Must be enrolled
-  const enrollment = await prisma.enrollment.findUnique({
-    where: { studentId_courseId: { studentId: user.id, courseId } },
-  });
-  if (!enrollment) return NextResponse.json({ error: 'Not enrolled' }, { status: 403 });
-
-  // Fetch exam with its questions (via ExamQuestion join) + lesson info
-  const exam = await prisma.exam.findUnique({
-    where: { id: examIdNum },
+  // Load lesson + exam + questions
+  const lesson = await prisma.lesson.findUnique({
+    where: { id: lessonIdNum },
     include: {
-      lesson: {
-        select: {
-          id: true,
-          title: true,
-          courseId: true,
-        },
-      },
-      examQuestions: {
-        orderBy: { order: 'asc' },
+      course: { select: { id: true } },
+      exam: {
         include: {
-          question: {
-            select: {
-              id: true,
-              text: true,
-              type: true,
-              optionsJson: true,
-              // correctAnswer intentionally omitted — sent only after submit
-            },
-          },
-        },
-      },
-      attempts: {
-        where: { studentId: user.id },
-        orderBy: { startedAt: 'desc' },
-        take: 1,
-        select: {
-          id: true,
-          score: true,
-          passed: true,
-          submittedAt: true,
-          startedAt: true,
-          answers: {
-            select: {
-              examQuestionId: true,
-              givenAnswer: true,
-              isCorrect: true,
+          examQuestions: {
+            orderBy: { order: 'asc' },
+            include: {
+              question: {
+                select: {
+                  id: true,
+                  text: true,
+                  type: true,
+                  optionsJson: true,
+                  // correctAnswer intentionally NOT selected — never sent to student
+                },
+              },
             },
           },
         },
@@ -70,107 +40,242 @@ export async function GET(req: NextRequest, { params }: { params: Params }) {
     },
   });
 
-  if (!exam) return NextResponse.json({ error: 'Exam not found' }, { status: 404 });
-  if (exam.lesson.courseId !== courseId)
-    return NextResponse.json({ error: 'Exam not in course' }, { status: 403 });
-
-  return NextResponse.json({ exam });
-}
-
-// ── POST: submit exam answers ────────────────────────────────────
-export async function POST(req: NextRequest, { params }: { params: Params }) {
-  const user = await getAuthUser();
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-
-  const { id, examId } = await params;
-  const courseId = Number(id);
-  const examIdNum = Number(examId);
-
-  if (!courseId || !examIdNum)
-    return NextResponse.json({ error: 'Invalid params' }, { status: 400 });
-
-  // Must be enrolled
-  const enrollment = await prisma.enrollment.findUnique({
-    where: { studentId_courseId: { studentId: user.id, courseId } },
-  });
-  if (!enrollment) return NextResponse.json({ error: 'Not enrolled' }, { status: 403 });
-
-  const body = await req.json();
-  // answers: { examQuestionId: number; givenAnswer: string }[]
-  const answers: { examQuestionId: number; givenAnswer: string }[] = body.answers ?? [];
-
-  if (!Array.isArray(answers) || answers.length === 0)
-    return NextResponse.json({ error: 'No answers provided' }, { status: 400 });
-
-  // Fetch exam with correct answers
-  const exam = await prisma.exam.findUnique({
-    where: { id: examIdNum },
-    include: {
-      lesson: { select: { id: true, courseId: true } },
-      examQuestions: {
-        include: {
-          question: { select: { id: true, correctAnswer: true } },
-        },
-      },
-    },
-  });
-
-  if (!exam) return NextResponse.json({ error: 'Exam not found' }, { status: 404 });
-  if (exam.lesson.courseId !== courseId)
-    return NextResponse.json({ error: 'Exam not in course' }, { status: 403 });
-
-  // Build a map: examQuestionId → correctAnswer
-  const correctMap = new Map<number, string>();
-  for (const eq of exam.examQuestions) {
-    correctMap.set(eq.id, eq.question.correctAnswer.trim().toLowerCase());
+  if (!lesson || !lesson.exam) {
+    return NextResponse.json({ error: 'Exam not found' }, { status: 404 });
   }
 
-  // Grade
-  let correct = 0;
-  const gradedAnswers = answers.map((a) => {
-    const expectedRaw = correctMap.get(a.examQuestionId);
-    const isCorrect =
-      expectedRaw !== undefined && a.givenAnswer.trim().toLowerCase() === expectedRaw;
-    if (isCorrect) correct++;
-    return { ...a, isCorrect };
+  // Verify enrollment
+  const enrollment = await prisma.enrollment.findUnique({
+    where: { studentId_courseId: { studentId: user.id, courseId: lesson.course.id } },
+  });
+  if (!enrollment) {
+    return NextResponse.json({ error: 'Not enrolled' }, { status: 403 });
+  }
+
+  // ✅ NEW: block access before the exam's scheduled time, even via direct URL
+  if (lesson.exam.scheduledAt && new Date(lesson.exam.scheduledAt) > new Date()) {
+    return NextResponse.json(
+      { error: 'not_yet_available', scheduledAt: lesson.exam.scheduledAt },
+      { status: 403 }
+    );
+  }
+
+  // ✅ NEW: block access if the student already has a passed attempt on this exam
+  const passedAttempt = await prisma.examAttempt.findFirst({
+    where: { studentId: user.id, examId: lesson.exam.id, passed: true },
+    select: { id: true, score: true, submittedAt: true },
+  });
+  if (passedAttempt) {
+    return NextResponse.json(
+      {
+        error: 'already_passed',
+        attempt: passedAttempt,
+      },
+      { status: 409 }
+    );
+  }
+
+  const questions = lesson.exam.examQuestions.map((eq) => {
+    let options: string[] = [];
+    try {
+      options = JSON.parse(eq.question.optionsJson);
+    } catch {
+      /* ignore */
+    }
+    return {
+      examQuestionId: eq.id,
+      order: eq.order,
+      mark: eq.mark,
+      questionId: eq.question.id,
+      text: eq.question.text,
+      type: eq.question.type,
+      options,
+    };
   });
 
-  const total = exam.examQuestions.length;
-  const score = total > 0 ? Math.round((correct / total) * 100) : 0;
-  const passed = score >= exam.passingScore;
+  return NextResponse.json({
+    examId: lesson.exam.id,
+    lessonTitle: lesson.title,
+    durationMinutes: lesson.exam.durationMinutes,
+    passingScore: lesson.exam.passingScore,
+    questions,
+  });
+}
 
-  // Create attempt + answers in one transaction
-  const attempt = await prisma.examAttempt.create({
-    data: {
-      studentId: user.id,
-      examId: examIdNum,
-      score,
-      passed,
-      submittedAt: new Date(),
-      answers: {
-        create: gradedAnswers.map((a) => ({
-          examQuestionId: a.examQuestionId,
-          givenAnswer: a.givenAnswer,
-          isCorrect: a.isCorrect,
-        })),
+// ── POST /api/student/exam/[lessonId] ────────────────────────────
+// Body: { answers: [{ examQuestionId, givenAnswer }] }
+// - MCQ / true_false: auto-graded immediately (isCorrect set)
+// - essay: isCorrect = null, gradedScore = null (pending manual grading)
+// Returns ResultData for the result screen
+export async function POST(
+  req: NextRequest,
+  { params }: { params: Promise<{ lessonId: string }> }
+) {
+  const user = await getAuthUser();
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
+  const { lessonId } = await params;
+  const lessonIdNum = Number(lessonId);
+
+  if (!lessonIdNum) return NextResponse.json({ error: 'Invalid lessonId' }, { status: 400 });
+
+  const body = await req.json();
+  const submitted: { examQuestionId: number; givenAnswer: string }[] = body.answers ?? [];
+
+  // Load exam with correct answers (server-side only)
+  const lesson = await prisma.lesson.findUnique({
+    where: { id: lessonIdNum },
+    include: {
+      course: { select: { id: true } },
+      exam: {
+        include: {
+          examQuestions: {
+            include: {
+              question: {
+                select: {
+                  id: true,
+                  type: true,
+                  correctAnswer: true,
+                },
+              },
+            },
+          },
+        },
       },
     },
-    include: {
-      answers: true,
-    },
   });
 
-  // Mark the exam lesson as completed in lesson progress
-  await prisma.lessonProgress.upsert({
-    where: { studentId_lessonId: { studentId: user.id, lessonId: exam.lesson.id } },
-    update: { completed: true, completedAt: new Date() },
-    create: {
-      studentId: user.id,
-      lessonId: exam.lesson.id,
-      completed: true,
-      completedAt: new Date(),
-    },
+  if (!lesson || !lesson.exam) {
+    return NextResponse.json({ error: 'Exam not found' }, { status: 404 });
+  }
+
+  // Verify enrollment
+  const enrollment = await prisma.enrollment.findUnique({
+    where: { studentId_courseId: { studentId: user.id, courseId: lesson.course.id } },
+  });
+  if (!enrollment) {
+    return NextResponse.json({ error: 'Not enrolled' }, { status: 403 });
+  }
+
+  const exam = lesson.exam;
+
+  // ✅ NEW: block submission before the exam's scheduled time
+  if (exam.scheduledAt && new Date(exam.scheduledAt) > new Date()) {
+    return NextResponse.json(
+      { error: 'not_yet_available', scheduledAt: exam.scheduledAt },
+      { status: 403 }
+    );
+  }
+
+  // ✅ NEW: block submission if the student already passed this exam
+  const passedAttempt = await prisma.examAttempt.findFirst({
+    where: { studentId: user.id, examId: exam.id, passed: true },
+    select: { id: true },
+  });
+  if (passedAttempt) {
+    return NextResponse.json({ error: 'already_passed' }, { status: 409 });
+  }
+
+  // Build a lookup: examQuestionId → { type, correctAnswer, mark }
+  const eqMap = new Map(
+    exam.examQuestions.map((eq) => [
+      eq.id,
+      { type: eq.question.type, correctAnswer: eq.question.correctAnswer, mark: eq.mark },
+    ])
+  );
+
+  // Determine auto-grade totals
+  let autoEarned = 0;
+  let autoTotal = 0;
+  let hasEssay = false;
+
+  const answerData = submitted
+    .map((s) => {
+      const eq = eqMap.get(s.examQuestionId);
+      if (!eq) return null;
+
+      if (eq.type === 'essay') {
+        hasEssay = true;
+        return {
+          examQuestionId: s.examQuestionId,
+          givenAnswer: s.givenAnswer,
+          isCorrect: null, // pending manual grading
+          gradedScore: null,
+        };
+      }
+
+      // Auto-grade MCQ / true_false (case-insensitive trim)
+      const correct = s.givenAnswer.trim().toLowerCase() === eq.correctAnswer.trim().toLowerCase();
+      autoTotal += eq.mark;
+      if (correct) autoEarned += eq.mark;
+
+      return {
+        examQuestionId: s.examQuestionId,
+        givenAnswer: s.givenAnswer,
+        isCorrect: correct,
+        gradedScore: correct ? eq.mark : 0,
+      };
+    })
+    .filter(Boolean) as {
+    examQuestionId: number;
+    givenAnswer: string;
+    isCorrect: boolean | null;
+    gradedScore: number | null;
+  }[];
+
+  // Compute auto-score percentage and pass/fail.
+  // If essay questions exist, pass/fail is deferred (null) until manually graded,
+  // and we also withhold any numeric score from storage/response (see below).
+  const autoScore = autoTotal > 0 ? Math.round((autoEarned / autoTotal) * 100) : null;
+  const passed = hasEssay ? null : autoScore !== null ? autoScore >= exam.passingScore : null;
+
+  // Create ExamAttempt + AttemptAnswers in a transaction
+  const attempt = await prisma.$transaction(async (tx) => {
+    const newAttempt = await tx.examAttempt.create({
+      data: {
+        studentId: user.id,
+        // ✅ When essay questions are present, store no score at all (pending manual review)
+        examId: exam.id,
+        score: hasEssay ? null : autoScore,
+        passed,
+        submittedAt: new Date(),
+      },
+    });
+
+    await tx.attemptAnswer.createMany({
+      data: answerData.map((a) => ({
+        attemptId: newAttempt.id,
+        examQuestionId: a.examQuestionId,
+        givenAnswer: a.givenAnswer,
+        isCorrect: a.isCorrect,
+        gradedScore: a.gradedScore,
+      })),
+    });
+
+    return newAttempt;
   });
 
-  return NextResponse.json({ attempt, score, passed, correct, total });
+  // ✅ NEW: when essay questions exist, withhold all score/pass data from the response.
+  // The frontend should show only the "pending manual grading" message in this case.
+  if (hasEssay) {
+    return NextResponse.json({
+      attemptId: attempt.id,
+      hasEssay: true,
+      autoScore: null,
+      autoTotal: 0,
+      autoEarned: 0,
+      passed: null,
+      passingScore: exam.passingScore,
+    });
+  }
+
+  return NextResponse.json({
+    attemptId: attempt.id,
+    hasEssay,
+    autoScore,
+    autoTotal,
+    autoEarned,
+    passed,
+    passingScore: exam.passingScore,
+  });
 }

@@ -19,13 +19,14 @@ import {
   XCircle,
   List,
   Lock,
+  CalendarClock,
 } from 'lucide-react';
 import Image from 'next/image';
 
 interface VideoRecord {
   id: number;
   vimeoId: string;
-  durationSec: number | null;
+  description: string | null;
 }
 interface ExamAttempt {
   id: number;
@@ -37,6 +38,7 @@ interface ExamRecord {
   id: number;
   durationMinutes: number | null;
   passingScore: number;
+  scheduledAt: string | null;
   attempts: ExamAttempt[];
 }
 interface LessonProgress {
@@ -86,6 +88,11 @@ const content = {
     showContent: 'محتوى الكورس',
     hideContent: 'إخفاء المحتوى',
     locked: 'أكمل الدرس السابق أولاً',
+    scheduledExam: 'امتحان مجدول',
+    examStartsAt: 'يبدأ الامتحان في',
+    examAvailable: 'الامتحان متاح الآن',
+    examNotStartedYet: 'الامتحان لم يبدأ بعد',
+    independentExam: 'مستقل',
   },
   en: {
     back: 'Student Dashboard',
@@ -112,12 +119,72 @@ const content = {
     showContent: 'Course Content',
     hideContent: 'Hide Content',
     locked: 'Complete the previous lesson first',
+    scheduledExam: 'Scheduled Exam',
+    examStartsAt: 'Exam starts at',
+    examAvailable: 'Exam is available now',
+    examNotStartedYet: 'Exam has not started yet',
+    independentExam: 'Independent',
   },
 };
 
 function formatDuration(sec: number | null) {
   if (!sec) return '';
   return `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`;
+}
+
+function formatScheduledDate(dateStr: string, lang: 'ar' | 'en'): string {
+  const date = new Date(dateStr);
+  const options: Intl.DateTimeFormatOptions = {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  };
+  return date.toLocaleDateString(lang === 'ar' ? 'ar-EG' : 'en-US', options);
+}
+
+function isScheduledExam(lesson: Lesson): boolean {
+  return lesson.type === 'exam' && lesson.exam?.scheduledAt != null;
+}
+
+// ── Vimeo duration lookup ──────────────────────────────────────
+// The Video model has no stored duration field — durations are fetched
+// live from Vimeo's public oEmbed endpoint, keyed by vimeoId, and cached
+// in-memory so the same video (e.g. active in the main panel AND visible
+// in the sidebar) is only ever fetched once per page load.
+const vimeoDurationCache = new Map<string, number | null>();
+
+function useVimeoDuration(vimeoId: string | undefined): number | null {
+  const [duration, setDuration] = useState<number | null>(
+    vimeoId ? (vimeoDurationCache.get(vimeoId) ?? null) : null
+  );
+
+  useEffect(() => {
+    if (!vimeoId) return;
+    if (vimeoDurationCache.has(vimeoId)) {
+      setDuration(vimeoDurationCache.get(vimeoId) ?? null);
+      return;
+    }
+    let cancelled = false;
+    fetch(
+      `https://vimeo.com/api/oembed.json?url=${encodeURIComponent(`https://vimeo.com/${vimeoId}`)}`
+    )
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        const value = typeof data?.duration === 'number' ? data.duration : null;
+        vimeoDurationCache.set(vimeoId, value);
+        if (!cancelled) setDuration(value);
+      })
+      .catch(() => {
+        vimeoDurationCache.set(vimeoId, null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [vimeoId]);
+
+  return duration;
 }
 
 function Avatar({ url, name, size = 32 }: { url: string | null; name: string; size?: number }) {
@@ -150,16 +217,29 @@ function Avatar({ url, name, size = 32 }: { url: string | null; name: string; si
 }
 
 // A lesson is "done" for unlock purposes when:
-// - video  → student clicked "Mark as watched"  (progress[0].completed)
-// - exam   → student passed the exam             (attempts[0].passed === true)
+// - scheduled exam → always considered complete (doesn't block others)
+// - regular exam   → student passed the exam (attempts[0].passed === true)
+// - video          → student clicked "Mark as watched" (progress[0].completed)
 function isLessonComplete(lesson: Lesson): boolean {
+  if (isScheduledExam(lesson)) return true;
   if (lesson.type === 'exam') return lesson.exam?.attempts[0]?.passed === true;
   return lesson.progress[0]?.completed === true;
 }
 
-// Lesson n is unlocked when every lesson before it is complete.
+// Lesson n is unlocked when:
+// - it's a scheduled exam → always unlocked (independent)
+// - it's the first lesson → always unlocked
+// - otherwise → every non-scheduled lesson before it must be complete
 function isLessonUnlocked(lessons: Lesson[], index: number): boolean {
+  const lesson = lessons[index];
+
+  // Scheduled exams are always unlocked (independent)
+  if (isScheduledExam(lesson)) return true;
+
+  // First lesson is always unlocked
   if (index === 0) return true;
+
+  // All previous lessons must be complete
   return lessons.slice(0, index).every(isLessonComplete);
 }
 
@@ -171,6 +251,7 @@ function LessonRow({
   isRtl,
   font,
   lockedMsg,
+  lang,
   onClick,
 }: {
   lesson: Lesson;
@@ -180,13 +261,19 @@ function LessonRow({
   isRtl: boolean;
   font: string | undefined;
   lockedMsg: string;
+  lang: 'ar' | 'en';
   onClick: () => void;
 }) {
+  const t = content[lang];
   const [showTooltip, setShowTooltip] = useState(false);
   const unlocked = isLessonUnlocked(lessons, index);
   const done = isLessonComplete(lesson);
   const isExam = lesson.type === 'exam';
+  const isScheduled = isScheduledExam(lesson);
   const attempt = lesson.exam?.attempts[0];
+  const videoDuration = useVimeoDuration(
+    lesson.type === 'video' ? lesson.video?.vimeoId : undefined
+  );
 
   const handleClick = () => {
     if (!unlocked) {
@@ -207,6 +294,8 @@ function LessonRow({
         <span className="mt-0.5 flex-shrink-0">
           {!unlocked ? (
             <Lock size={16} className="text-muted-foreground" />
+          ) : isScheduled ? (
+            <CalendarClock size={16} className="text-blue-500" />
           ) : isExam ? (
             attempt?.passed === true ? (
               <Trophy size={16} className="text-green-500" />
@@ -228,13 +317,17 @@ function LessonRow({
           >
             {lesson.title}
           </p>
-          {isExam ? (
-            <p className="text-xs text-accent mt-0.5" style={{ fontFamily: font }}>
-              {isRtl ? '📝 امتحان' : '📝 Exam'}
+          {isScheduled ? (
+            <p className="text-xs text-blue-500 mt-0.5" style={{ fontFamily: font }}>
+              📅 {t.scheduledExam}
             </p>
-          ) : lesson.video?.durationSec ? (
+          ) : isExam ? (
+            <p className="text-xs text-accent mt-0.5" style={{ fontFamily: font }}>
+              📝 {t.examLesson}
+            </p>
+          ) : videoDuration ? (
             <p className="text-xs text-muted-foreground mt-0.5" dir="ltr">
-              {formatDuration(lesson.video.durationSec)}
+              {formatDuration(videoDuration)}
             </p>
           ) : null}
         </div>
@@ -273,15 +366,34 @@ function ExamPanel({
   const hasAttempt = !!attempt?.submittedAt;
   const isPassed = attempt?.passed === true;
   const isFailed = attempt?.passed === false;
+  const isScheduled = exam.scheduledAt != null;
+  const now = new Date();
+  const scheduledDate = exam.scheduledAt ? new Date(exam.scheduledAt) : null;
+  const examHasStarted = !scheduledDate || scheduledDate <= now;
+
   return (
     <div className="flex-1 flex flex-col items-center justify-center p-6 sm:p-8 gap-5 sm:gap-6 text-center">
       <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl bg-accent/10 flex items-center justify-center">
-        <ClipboardList size={32} className="text-accent sm:hidden" />
-        <ClipboardList size={40} className="text-accent hidden sm:block" />
+        {isScheduled ? (
+          <>
+            <CalendarClock size={32} className="text-blue-500 sm:hidden" />
+            <CalendarClock size={40} className="text-blue-500 hidden sm:block" />
+          </>
+        ) : (
+          <>
+            <ClipboardList size={32} className="text-accent sm:hidden" />
+            <ClipboardList size={40} className="text-accent hidden sm:block" />
+          </>
+        )}
       </div>
       <div>
         <p className="text-xs text-muted-foreground mb-1" style={{ fontFamily: font }}>
           {t.examLesson} {lesson.order}
+          {isScheduled && (
+            <span className="ms-2 inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-500 text-xs font-bold">
+              {t.independentExam}
+            </span>
+          )}
         </p>
         <h2
           className="text-lg sm:text-xl font-bold text-foreground px-2"
@@ -290,6 +402,22 @@ function ExamPanel({
           {lesson.title}
         </h2>
       </div>
+
+      {/* Scheduled exam info */}
+      {isScheduled && scheduledDate && (
+        <div className="w-full max-w-sm p-4 rounded-2xl border border-blue-200 bg-blue-50">
+          <div className="flex items-center justify-center gap-2 mb-2">
+            <CalendarClock size={18} className="text-blue-500" />
+            <span className="text-sm font-bold text-blue-700" style={{ fontFamily: font }}>
+              {examHasStarted ? t.examAvailable : t.examNotStartedYet}
+            </span>
+          </div>
+          <p className="text-xs text-blue-600" style={{ fontFamily: font }}>
+            {t.examStartsAt}: {formatScheduledDate(exam.scheduledAt!, lang)}
+          </p>
+        </div>
+      )}
+
       <div className="flex items-center gap-6 text-sm">
         {exam.durationMinutes && (
           <div className="flex flex-col items-center gap-1">
@@ -325,15 +453,25 @@ function ExamPanel({
           </p>
         </div>
       )}
-      {!attempt && (
+      {!attempt && !isScheduled && (
         <p className="text-sm text-muted-foreground" style={{ fontFamily: font }}>
           {t.examNotTaken}
         </p>
       )}
+
       <a
-        href={`/student-dashboard/courses/${courseId}/lessons/exam/${lesson.id}`}
-        className="w-full sm:w-auto px-8 py-3 rounded-xl gradient-primary text-white font-bold text-sm hover:opacity-90 active:scale-95 transition-all"
+        href={
+          !examHasStarted ? '#' : `/student-dashboard/courses/${courseId}/lessons/exam/${lesson.id}`
+        }
+        className={`w-full sm:w-auto px-8 py-3 rounded-xl font-bold text-sm transition-all ${
+          !examHasStarted
+            ? 'bg-muted text-muted-foreground cursor-not-allowed'
+            : 'gradient-primary text-white hover:opacity-90 active:scale-95'
+        }`}
         style={{ fontFamily: font }}
+        onClick={(e) => {
+          if (!examHasStarted) e.preventDefault();
+        }}
       >
         {hasAttempt ? t.examRetake : t.examTake}
       </a>
@@ -383,6 +521,11 @@ export default function StudentCourseLessonsPage({ params }: { params: Promise<{
   // Desktop: sidebar open/closed beside content. Mobile: drives an accordion below the player.
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [mobileListOpen, setMobileListOpen] = useState(false);
+
+  // Live-fetched duration for whichever video lesson is currently active
+  const activeVideoDuration = useVimeoDuration(
+    activeLesson?.type === 'video' ? activeLesson.video?.vimeoId : undefined
+  );
 
   const fetchCourse = useCallback(() => {
     fetch(`/api/student/course/${courseId}`)
@@ -538,6 +681,11 @@ export default function StudentCourseLessonsPage({ params }: { params: Promise<{
                   <div className="min-w-0">
                     <p className="text-xs text-muted-foreground mb-1" style={{ fontFamily: font }}>
                       {t.lesson} {activeLesson.order}
+                      {activeVideoDuration && (
+                        <span className="ms-2" dir="ltr">
+                          · {formatDuration(activeVideoDuration)}
+                        </span>
+                      )}
                     </p>
                     <h2
                       className="text-base sm:text-lg font-bold text-foreground"
@@ -545,9 +693,12 @@ export default function StudentCourseLessonsPage({ params }: { params: Promise<{
                     >
                       {activeLesson.title}
                     </h2>
-                    {activeLesson.video.durationSec && (
-                      <p className="text-xs text-muted-foreground mt-1" dir="ltr">
-                        {formatDuration(activeLesson.video.durationSec)}
+                    {activeLesson.video.description && (
+                      <p
+                        className="text-xs sm:text-sm text-muted-foreground mt-1"
+                        style={{ fontFamily: font }}
+                      >
+                        {activeLesson.video.description}
                       </p>
                     )}
                   </div>
@@ -629,6 +780,7 @@ export default function StudentCourseLessonsPage({ params }: { params: Promise<{
                       isRtl={isRtl}
                       font={font}
                       lockedMsg={t.locked}
+                      lang={lang}
                       onClick={() => {
                         setActiveLesson(lesson);
                         setMobileListOpen(false);
@@ -689,6 +841,7 @@ export default function StudentCourseLessonsPage({ params }: { params: Promise<{
                         isRtl={isRtl}
                         font={font}
                         lockedMsg={t.locked}
+                        lang={lang}
                         onClick={() => setActiveLesson(lesson)}
                       />
                     ))

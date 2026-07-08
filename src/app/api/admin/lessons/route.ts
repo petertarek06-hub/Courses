@@ -49,7 +49,7 @@ export async function GET(req: NextRequest) {
 }
 
 // ── POST /api/admin/lessons ────────────────────────────────────
-// Body for video: { courseId, title, type:"video", vimeoId, durationSec? }
+// Body for video: { courseId, title, type:"video", vimeoId, description? }
 // Body for exam:  { courseId, title, type:"exam", durationMinutes?, passingScore?, scheduledAt? }
 //   scheduledAt: ISO-8601 string or null/undefined = immediately available
 export async function POST(req: NextRequest) {
@@ -70,7 +70,7 @@ export async function POST(req: NextRequest) {
   const nextOrder = (maxLesson?.order ?? 0) + 1;
 
   if (type === 'video') {
-    const { vimeoId, durationSec } = body;
+    const { vimeoId, description } = body;
     if (!vimeoId)
       return NextResponse.json({ error: 'vimeoId required for video lessons' }, { status: 400 });
 
@@ -83,7 +83,7 @@ export async function POST(req: NextRequest) {
         video: {
           create: {
             vimeoId: String(vimeoId).trim(),
-            durationSec: durationSec ? Number(durationSec) : null,
+            description: description ? String(description).trim() : null,
           },
         },
       },
@@ -125,7 +125,7 @@ export async function POST(req: NextRequest) {
 }
 
 // ── PATCH /api/admin/lessons ───────────────────────────────────
-// action: "updateVideo"              { id, title, vimeoId, durationSec? }
+// action: "updateVideo"              { id, title, vimeoId, description? }
 // action: "updateExam"               { id, title, durationMinutes?, passingScore?, scheduledAt? }
 // action: "toggleVisibility"         { id }
 // action: "reorder"                  { id, direction:"up"|"down" }
@@ -150,7 +150,7 @@ export async function PATCH(req: NextRequest) {
 
   // ── updateVideo ──────────────────────────────────────────────
   if (action === 'updateVideo') {
-    const { title, vimeoId, durationSec } = body;
+    const { title, vimeoId, description } = body;
     if (!title || !vimeoId)
       return NextResponse.json({ error: 'title and vimeoId required' }, { status: 400 });
 
@@ -160,11 +160,11 @@ export async function PATCH(req: NextRequest) {
       create: {
         lessonId: Number(id),
         vimeoId: String(vimeoId).trim(),
-        durationSec: durationSec ? Number(durationSec) : null,
+        description: description ? String(description).trim() : null,
       },
       update: {
         vimeoId: String(vimeoId).trim(),
-        durationSec: durationSec ? Number(durationSec) : null,
+        description: description ? String(description).trim() : null,
       },
     });
     return NextResponse.json({ ok: true });
@@ -212,28 +212,42 @@ export async function PATCH(req: NextRequest) {
     });
     return NextResponse.json({ ok: true });
   }
-
   // ── reorder ──────────────────────────────────────────────────
   if (action === 'reorder') {
     const { direction } = body;
     const allLessons = await prisma.lesson.findMany({
       where: { courseId: lesson.courseId },
       orderBy: { order: 'asc' },
-      select: { id: true, order: true },
+      select: {
+        id: true,
+        order: true,
+        type: true,
+        exam: { select: { scheduledAt: true } },
+      },
     });
-    const idx = allLessons.findIndex((l) => l.id === Number(id));
-    const swapIdx = direction === 'up' ? idx - 1 : idx + 1;
-    if (swapIdx < 0 || swapIdx >= allLessons.length) return NextResponse.json({ ok: true });
 
-    const a = allLessons[idx];
-    const b = allLessons[swapIdx];
+    // Scheduled exams are "independent" — they never gate or get gated by
+    // other lessons — so they reorder only among themselves, never
+    // swapping positions with a main-sequence lesson.
+    const isScheduledExam = (l: (typeof allLessons)[number]) =>
+      l.type === 'exam' && l.exam?.scheduledAt != null;
+
+    const current = allLessons.find((l) => l.id === Number(id));
+    if (!current) return NextResponse.json({ error: 'Lesson not found' }, { status: 404 });
+
+    const group = allLessons.filter((l) => isScheduledExam(l) === isScheduledExam(current));
+    const idx = group.findIndex((l) => l.id === current.id);
+    const swapIdx = direction === 'up' ? idx - 1 : idx + 1;
+    if (swapIdx < 0 || swapIdx >= group.length) return NextResponse.json({ ok: true });
+
+    const a = group[idx];
+    const b = group[swapIdx];
     await prisma.$transaction([
       prisma.lesson.update({ where: { id: a.id }, data: { order: b.order } }),
       prisma.lesson.update({ where: { id: b.id }, data: { order: a.order } }),
     ]);
     return NextResponse.json({ ok: true });
   }
-
   // ── addExamQuestions ─────────────────────────────────────────
   if (action === 'addExamQuestions') {
     const { questionIds } = body as { questionIds: number[] };

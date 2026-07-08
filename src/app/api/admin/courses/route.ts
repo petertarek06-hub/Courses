@@ -133,11 +133,31 @@ export async function DELETE(req: NextRequest) {
           select: { id: true },
         });
         const attemptIds = attempts.map((a) => a.id);
+
+        // ✅ Get examQuestion IDs to delete attemptAnswers
+        const examQuestions = await prisma.examQuestion.findMany({
+          where: { examId: { in: examIds } },
+          select: { id: true },
+        });
+        const examQuestionIds = examQuestions.map((eq) => eq.id);
+
+        // ✅ Delete in correct order (from leaf to root)
         if (attemptIds.length > 0) {
           await prisma.attemptAnswer.deleteMany({ where: { attemptId: { in: attemptIds } } });
         }
+
+        // ✅ Delete attemptAnswers linked to examQuestions
+        if (examQuestionIds.length > 0) {
+          await prisma.attemptAnswer.deleteMany({
+            where: { examQuestionId: { in: examQuestionIds } },
+          });
+        }
+
         await prisma.examAttempt.deleteMany({ where: { examId: { in: examIds } } });
-        // ✅ Fixed: was prisma.question (doesn't exist) → prisma.questionBank
+
+        // ✅ Delete junction table (examQuestion)
+        await prisma.examQuestion.deleteMany({ where: { examId: { in: examIds } } });
+
         await prisma.questionBank.deleteMany({ where: { courseId: { in: courseIds } } });
         await prisma.exam.deleteMany({ where: { lessonId: { in: lessonIds } } });
       }
