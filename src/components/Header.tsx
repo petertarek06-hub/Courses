@@ -3,7 +3,8 @@
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import AppLogo from '@/components/ui/AppLogo';
-import { Menu, X, Globe, LogOut, User, Settings, BookOpen } from 'lucide-react';
+import AppImage from '@/components/ui/AppImage';
+import { Menu, X, Globe, LogOut, User } from 'lucide-react';
 import { toast } from 'sonner';
 
 interface HeaderProps {
@@ -17,6 +18,7 @@ interface AuthUser {
   fullName: string;
   role: string;
   phone: string;
+  avatarUrl?: string | null;
 }
 
 const navLinks = {
@@ -37,6 +39,13 @@ export default function Header({ lang, onToggleLang, currentPath = '/' }: Header
   const links = navLinks[lang];
   const isRtl = lang === 'ar';
 
+  const dashboardHref =
+    user?.role === 'admin'
+      ? '/admin'
+      : user?.role === 'teacher'
+        ? '/teacher-dashboard'
+        : '/student-dashboard';
+
   useEffect(() => {
     fetch('/api/auth/me')
       .then((res) => {
@@ -55,53 +64,6 @@ export default function Header({ lang, onToggleLang, currentPath = '/' }: Header
     toast.success(lang === 'ar' ? 'تم تسجيل الخروج' : 'Logged out successfully');
     window.location.href = '/';
   };
-
-  // ── Role-based dashboard button ──────────────────────────────
-  const dashboardBtn =
-    user?.role === 'admin' ? (
-      // Admin → Settings page
-      <Link
-        href="/admin/settings"
-        className="hidden md:flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border text-sm font-semibold text-muted-foreground hover:bg-muted hover:text-foreground transition-all duration-150"
-        style={{ fontFamily: isRtl ? 'var(--font-cairo)' : undefined }}
-      >
-        <Settings size={15} />
-        {lang === 'ar' ? 'الإعدادات' : 'Settings'}
-      </Link>
-    ) : user?.role === 'teacher' ? (
-      <Link
-        href="/teacher-dashboard"
-        className="hidden md:flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border text-sm font-semibold text-muted-foreground hover:bg-muted hover:text-foreground transition-all duration-150"
-        style={{ fontFamily: isRtl ? 'var(--font-cairo)' : undefined }}
-      >
-        <BookOpen size={15} />
-        {lang === 'ar' ? 'كورساتي' : 'My Courses'}
-      </Link>
-    ) : null;
-
-  // Mobile version of the same button
-  const mobileDashboardBtn =
-    user?.role === 'admin' ? (
-      <Link
-        href="/admin/settings"
-        onClick={() => setMobileOpen(false)}
-        className="px-4 py-3 rounded-lg border border-border text-sm font-semibold text-muted-foreground hover:bg-muted transition-all duration-150 flex items-center gap-2"
-        style={{ fontFamily: isRtl ? 'var(--font-cairo)' : undefined }}
-      >
-        <Settings size={15} />
-        {lang === 'ar' ? 'الإعدادات' : 'Settings'}
-      </Link>
-    ) : user?.role === 'teacher' ? (
-      <Link
-        href="/teacher-dashboard"
-        onClick={() => setMobileOpen(false)}
-        className="px-4 py-3 rounded-lg border border-border text-sm font-semibold text-muted-foreground hover:bg-muted transition-all duration-150 flex items-center gap-2"
-        style={{ fontFamily: isRtl ? 'var(--font-cairo)' : undefined }}
-      >
-        <BookOpen size={15} />
-        {lang === 'ar' ? 'كورساتي' : 'My Courses'}
-      </Link>
-    ) : null;
 
   return (
     <header
@@ -155,9 +117,22 @@ export default function Header({ lang, onToggleLang, currentPath = '/' }: Header
             {!loadingUser &&
               (user ? (
                 <div className="hidden md:flex items-center gap-2">
-                  {/* User info */}
-                  <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-muted">
-                    <User size={15} className="text-primary" />
+                  {/* User info — links to their dashboard */}
+                  <Link
+                    href={dashboardHref}
+                    className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-muted hover:bg-muted/70 transition-colors duration-150"
+                  >
+                    {user.avatarUrl ? (
+                      <AppImage
+                        src={user.avatarUrl}
+                        alt={user.fullName}
+                        width={22}
+                        height={22}
+                        className="w-[22px] h-[22px] rounded-full object-cover flex-shrink-0"
+                      />
+                    ) : (
+                      <User size={15} className="text-primary flex-shrink-0" />
+                    )}
                     <span
                       className="text-sm font-semibold text-foreground max-w-[120px] truncate"
                       style={{ fontFamily: isRtl ? 'var(--font-cairo)' : undefined }}
@@ -177,7 +152,7 @@ export default function Header({ lang, onToggleLang, currentPath = '/' }: Header
                         {lang === 'ar' ? 'مدرس' : 'Teacher'}
                       </span>
                     )}
-                  </div>
+                  </Link>
                   {/* Logout button */}
                   <button
                     onClick={handleLogout}
@@ -197,7 +172,6 @@ export default function Header({ lang, onToggleLang, currentPath = '/' }: Header
                   {lang === 'ar' ? 'ابدأ الآن' : 'Get Started'}
                 </Link>
               ))}
-            {!loadingUser && dashboardBtn}
 
             {/* Mobile hamburger */}
             <button
@@ -235,8 +209,22 @@ export default function Header({ lang, onToggleLang, currentPath = '/' }: Header
             ))}
             {user ? (
               <>
-                <div className="flex items-center gap-2 px-4 py-3 rounded-lg bg-muted mt-2">
-                  <User size={15} className="text-primary" />
+                <Link
+                  href={dashboardHref}
+                  onClick={() => setMobileOpen(false)}
+                  className="flex items-center gap-2 px-4 py-3 rounded-lg bg-muted mt-2"
+                >
+                  {user.avatarUrl ? (
+                    <AppImage
+                      src={user.avatarUrl}
+                      alt={user.fullName}
+                      width={22}
+                      height={22}
+                      className="w-[22px] h-[22px] rounded-full object-cover flex-shrink-0"
+                    />
+                  ) : (
+                    <User size={15} className="text-primary flex-shrink-0" />
+                  )}
                   <span
                     className="text-sm font-semibold text-foreground"
                     style={{ fontFamily: isRtl ? 'var(--font-cairo)' : undefined }}
@@ -256,8 +244,7 @@ export default function Header({ lang, onToggleLang, currentPath = '/' }: Header
                       {lang === 'ar' ? 'مدرس' : 'Teacher'}
                     </span>
                   )}
-                </div>
-                {mobileDashboardBtn}
+                </Link>
                 <button
                   onClick={handleLogout}
                   className="mt-1 px-4 py-3 rounded-lg border border-red-200 text-red-500 text-sm font-bold text-center transition-all duration-150"

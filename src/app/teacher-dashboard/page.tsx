@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import Header from '@/components/Header';
 import Footer from '@/components/Footer';
 import { useLang } from '@/lib/uselang';
-import { BookOpen, Users, ListVideo, Loader2, GraduationCap } from 'lucide-react';
+import { BookOpen, Users, ListVideo, Loader2, GraduationCap, ClipboardList } from 'lucide-react';
 
 const gradeLabelMap: Record<string, { ar: string; en: string }> = {
   'grade-1': { ar: 'الصف الأول الابتدائي', en: 'Grade 1' },
@@ -39,6 +39,7 @@ const content = {
     title: 'لوحة المدرس',
     myCourses: 'كورساتي',
     manageLessons: 'إدارة الدروس',
+    examsLink: 'الامتحانات',
     lessons: 'درس',
     students: 'طالب',
     free: 'مجاني',
@@ -52,6 +53,7 @@ const content = {
     title: 'teacher Dashboard',
     myCourses: 'My Courses',
     manageLessons: 'Manage Lessons',
+    examsLink: 'Exams',
     lessons: 'lessons',
     students: 'students',
     free: 'Free',
@@ -177,14 +179,24 @@ export default function teacherDashboardPage() {
                       {course.price === 0 ? t.free : `${course.price} ${t.egp}`}
                     </span>
                   </div>
-                  <button
-                    onClick={() => router.push(`/teacher-dashboard/courses/${course.id}/lessons`)}
-                    className="mt-auto flex items-center justify-center gap-2 w-full py-2 rounded-xl gradient-primary text-white text-xs font-bold hover:opacity-90 active:scale-95 transition-all"
-                    style={{ fontFamily: font }}
-                  >
-                    <ListVideo size={14} />
-                    {t.manageLessons}
-                  </button>
+                  <div className="mt-auto flex items-center gap-2">
+                    <button
+                      onClick={() => router.push(`/teacher-dashboard/courses/${course.id}/lessons`)}
+                      className="flex-1 flex items-center justify-center gap-2 py-2 rounded-xl gradient-primary text-white text-xs font-bold hover:opacity-90 active:scale-95 transition-all"
+                      style={{ fontFamily: font }}
+                    >
+                      <ListVideo size={14} />
+                      {t.manageLessons}
+                    </button>
+                    <button
+                      onClick={() => router.push(`/teacher-dashboard/courses/${course.id}/exams`)}
+                      className="flex-1 flex items-center justify-center gap-2 py-2 rounded-xl border border-border text-foreground text-xs font-bold hover:bg-muted transition-all"
+                      style={{ fontFamily: font }}
+                    >
+                      <ClipboardList size={14} />
+                      {t.examsLink}
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>

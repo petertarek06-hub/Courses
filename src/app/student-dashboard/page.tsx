@@ -6,6 +6,7 @@ import Image from 'next/image';
 import Header from '@/components/Header';
 import Footer from '@/components/Footer';
 import ExamCountdownBadge from '@/components/ExamCountdownBadge';
+import EditProfileModal from './components/EditProfileModal';
 import { useLang } from '@/lib/uselang';
 import {
   User,
@@ -27,6 +28,7 @@ import {
   Phone,
   MapPin,
   MessageCircle,
+  Pencil,
 } from 'lucide-react';
 
 const gradeLabelMap: Record<string, { ar: string; en: string }> = {
@@ -120,6 +122,7 @@ const content = {
   ar: {
     title: 'لوحة الطالب',
     profile: 'الملف الشخصي',
+    editProfile: 'تعديل البيانات',
     courses: 'الكورسات المسجّلة',
     exams: 'نتائج الامتحانات',
     balance: 'الرصيد والمعاملات',
@@ -191,6 +194,7 @@ const content = {
   en: {
     title: 'Student Dashboard',
     profile: 'Profile',
+    editProfile: 'Edit Profile',
     courses: 'Enrolled Courses',
     exams: 'Exam Results',
     balance: 'Balance & Transactions',
@@ -321,6 +325,7 @@ export default function StudentDashboardPage() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [centerInfo, setCenterInfo] = useState<CenterInfo | null>(null);
+  const [editOpen, setEditOpen] = useState(false);
 
   // Top-up form state
   const [topUpAmount, setTopUpAmount] = useState('');
@@ -473,6 +478,14 @@ export default function StudentDashboardPage() {
                     {gradeLabel(profile.academicYear)}
                   </p>
                 </div>
+                <button
+                  onClick={() => setEditOpen(true)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border text-xs font-bold text-muted-foreground hover:bg-muted hover:text-foreground transition-all duration-150"
+                  style={{ fontFamily: font }}
+                >
+                  <Pencil size={13} />
+                  {t.editProfile}
+                </button>
               </div>
               <div className="mt-4 flex flex-col gap-2 text-sm">
                 <div className="flex justify-between gap-2">
@@ -980,6 +993,13 @@ export default function StudentDashboardPage() {
       </main>
 
       <Footer lang={lang} />
+
+      <EditProfileModal
+        open={editOpen}
+        onClose={() => setEditOpen(false)}
+        lang={lang}
+        profile={profile}
+      />
     </div>
   );
 }

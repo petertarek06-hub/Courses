@@ -28,7 +28,7 @@ export async function GET() {
       // here at all (they live in TopUpRequest until approved).
       prisma.transaction.aggregate({
         _sum: { amount: true },
-        where: { type: 'purchase' },
+        where: { type: 'topup' },
       }),
 
       // Last 10 registered users (any role) for the recent table

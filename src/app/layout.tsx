@@ -2,6 +2,7 @@
 import React from 'react';
 import type { Metadata, Viewport } from 'next';
 import { Plus_Jakarta_Sans, Cairo } from 'next/font/google';
+import '../components/Header';
 import '../styles/tailwind.css';
 import { Toaster } from 'sonner';
 //import { Terminal } from 'lucide-react';

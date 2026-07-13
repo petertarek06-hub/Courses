@@ -1,10 +1,21 @@
-//src/app/homepage/FeaturedTeachersSection.tsx
-import React from 'react';
+'use client';
+import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import AppImage from '@/components/ui/AppImage';
 
 interface Props {
   lang: 'ar' | 'en';
+}
+
+interface Teacher {
+  id: number;
+  fullName: string;
+  avatarUrl: string | null;
+  whatsappNumber: string | null;
+  subject: string;
+  academicYear: string;
+  courses: number;
+  students: number;
 }
 
 function WhatsAppIcon() {
@@ -15,99 +26,27 @@ function WhatsAppIcon() {
   );
 }
 
-const featuredTeachers = [
-  {
-    id: 'teacher-001',
-    nameAr: 'أ. محمد السيد',
-    nameEn: 'Mr. Mohamed El-Sayed',
-    subjectAr: 'الرياضيات',
-    subjectEn: 'Mathematics',
-    gradeAr: 'الصف الثالث الثانوي',
-    gradeEn: 'Grade 12',
-    photo: 'https://img.rocket.new/generatedImages/rocket_gen_img_1cbf097bf-1771887488991.png',
-    photoAlt: 'Male teacher with glasses in professional attire',
-    whatsapp: 'https://wa.me/201111111111',
-    color: 'bg-primary/10 text-primary',
-    lessons: 48,
-  },
-  {
-    id: 'teacher-002',
-    nameAr: 'أ. نور إبراهيم',
-    nameEn: 'Ms. Nour Ibrahim',
-    subjectAr: 'اللغة العربية',
-    subjectEn: 'Arabic Language',
-    gradeAr: 'الصف الأول الثانوي',
-    gradeEn: 'Grade 10',
-    photo: 'https://img.rocket.new/generatedImages/rocket_gen_img_1f23078ba-1773180519517.png',
-    photoAlt: 'Female teacher smiling in classroom setting',
-    whatsapp: 'https://wa.me/201222222222',
-    color: 'bg-secondary/20 text-secondary',
-    lessons: 36,
-  },
-  {
-    id: 'teacher-003',
-    nameAr: 'أ. كريم عبدالله',
-    nameEn: 'Mr. Karim Abdallah',
-    subjectAr: 'العلوم',
-    subjectEn: 'Science',
-    gradeAr: 'الصف السادس الابتدائي',
-    gradeEn: 'Grade 6',
-    photo: 'https://img.rocket.new/generatedImages/rocket_gen_img_13e3f7bce-1773055229123.png',
-    photoAlt: 'Young male teacher in blue shirt',
-    whatsapp: 'https://wa.me/201333333333',
-    color: 'bg-accent/20 text-accent',
-    lessons: 29,
-  },
-  {
-    id: 'teacher-004',
-    nameAr: 'أ. سارة مصطفى',
-    nameEn: 'Ms. Sara Mostafa',
-    subjectAr: 'اللغة الإنجليزية',
-    subjectEn: 'English Language',
-    gradeAr: 'الصف الثاني الإعدادي',
-    gradeEn: 'Grade 8',
-    photo: 'https://img.rocket.new/generatedImages/rocket_gen_img_16cc0c862-1772096790295.png',
-    photoAlt: 'Female teacher with warm smile in light background',
-    whatsapp: 'https://wa.me/201444444444',
-    color: 'bg-purple-100 text-purple-600',
-    lessons: 42,
-  },
-  {
-    id: 'teacher-005',
-    nameAr: 'أ. أحمد حسن',
-    nameEn: 'Mr. Ahmed Hassan',
-    subjectAr: 'الفيزياء',
-    subjectEn: 'Physics',
-    gradeAr: 'الصف الثاني الثانوي',
-    gradeEn: 'Grade 11',
-    photo: 'https://img.rocket.new/generatedImages/rocket_gen_img_1cfd048b8-1772544165648.png',
-    photoAlt: 'Male physics teacher with confident expression',
-    whatsapp: 'https://wa.me/201555555555',
-    color: 'bg-red-100 text-red-500',
-    lessons: 55,
-  },
-  {
-    id: 'teacher-006',
-    nameAr: 'أ. منى الشربيني',
-    nameEn: 'Ms. Mona El-Sherbini',
-    subjectAr: 'الكيمياء',
-    subjectEn: 'Chemistry',
-    gradeAr: 'الصف الثالث الثانوي',
-    gradeEn: 'Grade 12',
-    photo: 'https://img.rocket.new/generatedImages/rocket_gen_img_171c6e258-1766803099050.png',
-    photoAlt: 'Female chemistry teacher in lab coat',
-    whatsapp: 'https://wa.me/201666666666',
-    color: 'bg-teal-100 text-teal-600',
-    lessons: 38,
-  },
-];
+function initials(name: string): string {
+  return name
+    .trim()
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((w) => w[0])
+    .join('')
+    .toUpperCase();
+}
+
+function whatsappLink(number: string): string {
+  const digits = number.replace(/\D/g, '');
+  return `https://wa.me/${digits}`;
+}
 
 const content = {
   ar: {
     badge: 'نخبة المدرسين',
     title: 'تعلّم من أفضل المدرسين',
     subtitle: 'مدرسون متخصصون في جميع المواد الدراسية من الابتدائي حتى الثانوية',
-    lessonsLabel: 'درس',
+    coursesLabel: 'كورس',
     whatsappLabel: 'واتساب',
     viewAll: 'عرض كل الكورسات',
   },
@@ -115,7 +54,7 @@ const content = {
     badge: 'Top Teachers',
     title: 'Learn from the Best Teachers',
     subtitle: 'Specialist teachers in all subjects from primary through high school',
-    lessonsLabel: 'lessons',
+    coursesLabel: 'courses',
     whatsappLabel: 'WhatsApp',
     viewAll: 'View All Courses',
   },
@@ -124,11 +63,32 @@ const content = {
 export default function FeaturedTeachersSection({ lang }: Props) {
   const t = content[lang];
   const isRtl = lang === 'ar';
+  const [teachers, setTeachers] = useState<Teacher[] | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch('/api/homepage/featured-teachers')
+      .then((r) => (r.ok ? r.json() : []))
+      .then((data) => {
+        if (!cancelled) setTeachers(data);
+      })
+      .catch(() => {
+        if (!cancelled) setTeachers([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  if (teachers && teachers.length === 0) {
+    return null;
+  }
+
+  const items: (Teacher | null)[] = teachers ?? Array.from({ length: 6 }, () => null);
 
   return (
     <section className="py-16 md:py-24 bg-background" dir={isRtl ? 'rtl' : 'ltr'}>
       <div className="max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-8 xl:px-10">
-        {/* Header */}
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-10">
           <div>
             <span
@@ -159,66 +119,81 @@ export default function FeaturedTeachersSection({ lang }: Props) {
           </Link>
         </div>
 
-        {/* Teachers grid */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3 2xl:grid-cols-3 gap-6">
-          {featuredTeachers.map((teacher) => (
-            <div
-              key={teacher.id}
-              className="bg-card rounded-2xl p-5 card-shadow hover:card-shadow-hover border border-border transition-all duration-200 group flex flex-col"
-            >
-              {/* Teacher info */}
-              <div className="flex items-center gap-3 mb-4">
-                <div className="relative flex-shrink-0">
-                  <AppImage
-                    src={teacher.photo}
-                    alt={teacher.photoAlt}
-                    width={56}
-                    height={56}
-                    className="w-14 h-14 rounded-full object-cover border-2 border-border"
-                  />
+          {items.map((teacher, i) => {
+            if (!teacher) {
+              return (
+                <div
+                  key={`skeleton-${i}`}
+                  className="bg-card rounded-2xl p-5 border border-border h-[220px] animate-pulse"
+                />
+              );
+            }
+
+            return (
+              <div
+                key={teacher.id}
+                className="bg-card rounded-2xl p-5 card-shadow hover:card-shadow-hover border border-border transition-all duration-200 group flex flex-col"
+              >
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="relative flex-shrink-0">
+                    {teacher.avatarUrl ? (
+                      <AppImage
+                        src={teacher.avatarUrl}
+                        alt={teacher.fullName}
+                        width={56}
+                        height={56}
+                        className="w-14 h-14 rounded-full object-cover border-2 border-border"
+                      />
+                    ) : (
+                      <div className="w-14 h-14 rounded-full border-2 border-border bg-muted flex items-center justify-center font-bold text-muted-foreground">
+                        {initials(teacher.fullName)}
+                      </div>
+                    )}
+                  </div>
+                  <div className="min-w-0">
+                    <h3
+                      className="font-bold text-base text-foreground truncate group-hover:text-primary transition-colors duration-150"
+                      style={{ fontFamily: isRtl ? 'var(--font-cairo)' : undefined }}
+                    >
+                      {teacher.fullName}
+                    </h3>
+                    <span
+                      className="inline-block px-2.5 py-0.5 rounded-full text-xs font-semibold mt-1 bg-primary/10 text-primary"
+                      style={{ fontFamily: isRtl ? 'var(--font-cairo)' : undefined }}
+                    >
+                      {teacher.subject}
+                    </span>
+                  </div>
                 </div>
-                <div className="min-w-0">
-                  <h3
-                    className="font-bold text-base text-foreground truncate group-hover:text-primary transition-colors duration-150"
-                    style={{ fontFamily: isRtl ? 'var(--font-cairo)' : undefined }}
-                  >
-                    {isRtl ? teacher.nameAr : teacher.nameEn}
-                  </h3>
+
+                <div className="flex items-center justify-between mb-4 text-sm text-muted-foreground">
                   <span
-                    className={`inline-block px-2.5 py-0.5 rounded-full text-xs font-semibold mt-1 ${teacher.color}`}
+                    className="flex items-center gap-1"
                     style={{ fontFamily: isRtl ? 'var(--font-cairo)' : undefined }}
                   >
-                    {isRtl ? teacher.subjectAr : teacher.subjectEn}
+                    🎓 {teacher.academicYear}
+                  </span>
+                  <span className="flex items-center gap-1 tabular-nums">
+                    📚 {teacher.courses} {t.coursesLabel}
                   </span>
                 </div>
-              </div>
 
-              {/* Grade + lessons */}
-              <div className="flex items-center justify-between mb-4 text-sm text-muted-foreground">
-                <span
-                  className="flex items-center gap-1"
-                  style={{ fontFamily: isRtl ? 'var(--font-cairo)' : undefined }}
-                >
-                  🎓 {isRtl ? teacher.gradeAr : teacher.gradeEn}
-                </span>
-                <span className="flex items-center gap-1 tabular-nums">
-                  📹 {teacher.lessons} {t.lessonsLabel}
-                </span>
+                {teacher.whatsappNumber ? (
+                  <a
+                    href={whatsappLink(teacher.whatsappNumber)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="mt-auto flex items-center justify-center gap-2 w-full py-2.5 rounded-xl bg-whatsapp hover:bg-green-500 text-white text-sm font-bold transition-all duration-150 active:scale-95"
+                    style={{ fontFamily: isRtl ? 'var(--font-cairo)' : undefined }}
+                  >
+                    <WhatsAppIcon />
+                    {t.whatsappLabel}
+                  </a>
+                ) : null}
               </div>
-
-              {/* WhatsApp CTA */}
-              <a
-                href={teacher.whatsapp}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="mt-auto flex items-center justify-center gap-2 w-full py-2.5 rounded-xl bg-whatsapp hover:bg-green-500 text-white text-sm font-bold transition-all duration-150 active:scale-95"
-                style={{ fontFamily: isRtl ? 'var(--font-cairo)' : undefined }}
-              >
-                <WhatsAppIcon />
-                {t.whatsappLabel}
-              </a>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
     </section>
