@@ -91,6 +91,8 @@ const content = {
     amount: 'المبلغ (ج.م)',
     amountPlaceholder: '0',
     balanceUpdated: 'تم تحديث الرصيد بنجاح',
+    insufficientBalance: 'رصيد الطالب غير كافٍ لإتمام عملية الخصم',
+    genericBalanceError: 'حدث خطأ أثناء تحديث الرصيد',
     confirmDelete: 'هل أنت متأكد من حذف هذا الطالب؟',
     confirmDeleteBtn: 'حذف نهائيًا',
     deletedSuccess: 'تم حذف الطالب بنجاح',
@@ -140,6 +142,8 @@ const content = {
     amount: 'Amount (EGP)',
     amountPlaceholder: '0',
     balanceUpdated: 'Balance updated successfully',
+    insufficientBalance: "Deduction exceeds the student's current balance",
+    genericBalanceError: 'Something went wrong updating the balance',
     confirmDelete: 'Are you sure you want to delete this student?',
     confirmDeleteBtn: 'Delete Permanently',
     deletedSuccess: 'Student deleted successfully',
@@ -289,16 +293,33 @@ export default function AdminStudentsPage() {
   const handleBalance = async (action: 'addBalance' | 'deductBalance') => {
     if (!balanceStudent || !balanceAmount) return;
     setBalanceLoading(true);
-    const res = await fetch('/api/admin/students', {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: balanceStudent.id, action, amount: Number(balanceAmount) }),
-    });
-    if (res.ok) {
-      toast.success(t.balanceUpdated);
-      setBalanceStudent(null);
-      setBalanceAmount('');
-      fetchStudents();
+    try {
+      const res = await fetch('/api/admin/students', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: balanceStudent.id, action, amount: Number(balanceAmount) }),
+      });
+
+      if (res.ok) {
+        toast.success(t.balanceUpdated);
+        setBalanceStudent(null);
+        setBalanceAmount('');
+        fetchStudents();
+      } else {
+        // ✅ FIX: surface *why* the update failed instead of failing
+        // silently — most notably the 'insufficient_balance' case, where
+        // the API now rejects a deduction larger than the current balance
+        // rather than clamping it to zero. The modal stays open with the
+        // amount intact so the admin can correct it.
+        const data = await res.json().catch(() => null);
+        if (data?.error === 'insufficient_balance') {
+          toast.error(t.insufficientBalance);
+        } else {
+          toast.error(t.genericBalanceError);
+        }
+      }
+    } catch {
+      toast.error(t.genericBalanceError);
     }
     setBalanceLoading(false);
   };

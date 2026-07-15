@@ -252,6 +252,31 @@ export async function POST(
       })),
     });
 
+    // ✅ NEW: an exam-type lesson only counts toward course progress once the
+    // student has actually passed it — a fail, or an essay-pending attempt
+    // (passed === null), leaves the lesson incomplete. This mirrors the
+    // "completed" semantics of LessonProgress used for video lessons, but
+    // gated on passing rather than merely attempting.
+    //
+    // Note: if this exam has essay questions, `passed` is null here and no
+    // write happens yet. Whichever endpoint later performs manual grading
+    // of essay answers (e.g. the teacher attempt-review route) and flips
+    // passed to true must perform this same upsert at that point, or a
+    // student who only passes after manual grading will never get credit
+    // for this lesson in their course progress.
+    if (passed === true) {
+      await tx.lessonProgress.upsert({
+        where: { studentId_lessonId: { studentId: user.id, lessonId: lessonIdNum } },
+        update: { completed: true, completedAt: new Date() },
+        create: {
+          studentId: user.id,
+          lessonId: lessonIdNum,
+          completed: true,
+          completedAt: new Date(),
+        },
+      });
+    }
+
     return newAttempt;
   });
 

@@ -36,6 +36,10 @@ interface HistoryItem {
   amount: number;
   method: string;
   status: 'approved' | 'rejected';
+  // ✅ NEW: distinguishes a credit ('topup') from a manual deduction
+  // ('adjustment') within the same history list — both previously showed
+  // as 'approved' with no way to tell them apart.
+  type: 'topup' | 'adjustment';
   notes: string | null;
   date: string;
   student: { id: number; fullName: string; phone: string };
@@ -71,6 +75,7 @@ const content = {
     cancel: 'إلغاء',
     approved: 'مقبول',
     rejected: 'مرفوض',
+    discount: 'خصم',
     statusLabel: 'الحالة',
     viewReceipt: 'عرض الإيصال',
     senderPhone: 'رقم المُرسل',
@@ -105,6 +110,7 @@ const content = {
     cancel: 'Cancel',
     approved: 'Approved',
     rejected: 'Rejected',
+    discount: 'Discount',
     statusLabel: 'Status',
     viewReceipt: 'View receipt',
     senderPhone: 'Sender phone',
@@ -452,6 +458,11 @@ export default function AdminPaymentsPage() {
                   {history.map((item) => {
                     const { label: methodLabel, Icon: MethodIcon } = methodDisplay(item.method, t);
                     const isApproved = item.status === 'approved';
+                    // ✅ NEW: a manual deduction is an approved transaction
+                    // too, so `isApproved` alone can't tell it apart from a
+                    // credit anymore — check the transaction type instead.
+                    const isDeduction = item.kind === 'transaction' && item.type === 'adjustment';
+
                     return (
                       <tr
                         key={`${item.kind}-${item.id}`}
@@ -471,10 +482,16 @@ export default function AdminPaymentsPage() {
                           </p>
                         </td>
                         <td
-                          className={`px-2 sm:px-4 py-2 sm:py-3 text-center align-middle border-b border-border ${getBorderDirection()} font-bold text-foreground whitespace-nowrap`}
+                          className={`px-2 sm:px-4 py-2 sm:py-3 text-center align-middle border-b border-border ${getBorderDirection()} font-bold whitespace-nowrap ${
+                            isDeduction ? 'text-red-500' : 'text-foreground'
+                          }`}
                           dir="ltr"
                         >
-                          {isApproved ? '+' : ''}
+                          {/* ✅ NEW: deductions render with a red '-' prefix,
+                              the mirror image of how credits render with a
+                              '+' prefix — previously both showed identically
+                              as '+amount' once approved. */}
+                          {isDeduction ? '-' : isApproved ? '+' : ''}
                           {item.amount} {t.egp}
                         </td>
                         <td
@@ -497,13 +514,20 @@ export default function AdminPaymentsPage() {
                         <td className="px-2 sm:px-4 py-2 sm:py-3 text-center align-middle border-b border-border">
                           <span
                             className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] sm:text-xs font-bold whitespace-nowrap ${
-                              isApproved
-                                ? 'bg-green-500/10 text-green-600'
-                                : 'bg-red-500/10 text-red-500'
+                              // ✅ NEW: a deduction gets its own red 'Discount'
+                              // badge instead of the green 'Approved' badge —
+                              // it was never something a student requested and
+                              // an admin approved, so labeling it 'Approved'
+                              // was misleading.
+                              isDeduction
+                                ? 'bg-red-500/10 text-red-500'
+                                : isApproved
+                                  ? 'bg-green-500/10 text-green-600'
+                                  : 'bg-red-500/10 text-red-500'
                             }`}
                             style={{ fontFamily: font }}
                           >
-                            {isApproved ? t.approved : t.rejected}
+                            {isDeduction ? t.discount : isApproved ? t.approved : t.rejected}
                           </span>
                         </td>
                       </tr>

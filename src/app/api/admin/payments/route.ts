@@ -9,17 +9,6 @@ async function authorizeAdmin() {
   return user;
 }
 
-// GET — pending top-up requests + resolved history
-//
-// `pending`: TopUpRequests awaiting review (unchanged from before).
-//
-// `history`: a merge of two sources, since "resolved" now spans two tables:
-//  - Transaction (type: 'topup'): money that actually moved — this covers
-//    both admin-approved TopUpRequests AND direct manual balance additions
-//    from /api/admin/students (method: 'manual'), since both now write here.
-//  - TopUpRequest (status: 'rejected'): requests that were declined. No
-//    Transaction exists for these since nothing moved, but the admin still
-//    needs to see them for the audit trail.
 export async function GET() {
   const admin = await authorizeAdmin();
   if (!admin) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -57,6 +46,11 @@ export async function GET() {
       amount: t.amount,
       method: t.method,
       status: 'approved' as const,
+      // ✅ NEW: pass the underlying transaction type through so the client
+      // can tell a manual deduction ('adjustment') apart from a credit
+      // ('topup') — both were previously indistinguishable once merged
+      // into this history list, since `status` is 'approved' for both.
+      type: t.type as 'topup' | 'adjustment',
       notes: t.notes,
       date: t.createdAt,
       student: t.student,
@@ -67,6 +61,9 @@ export async function GET() {
       amount: r.amount,
       method: r.method,
       status: 'rejected' as const,
+      // A rejected top-up request never credited or deducted anything, but
+      // we still tag it 'topup' since that's what it would have been.
+      type: 'topup' as const,
       notes: r.notes,
       date: r.processedAt ?? r.createdAt,
       student: r.student,

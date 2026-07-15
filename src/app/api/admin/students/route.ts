@@ -100,14 +100,29 @@ export async function PATCH(req: NextRequest) {
       return NextResponse.json({ error: 'Student not found' }, { status: 404 });
     }
 
-    // Deducting more than the current balance just zeroes it out, rather
-    // than going negative or throwing.
-    const delta =
-      action === 'addBalance' ? Number(amount) : -Math.min(Number(amount), student.balance ?? 0);
-    const newBalance = Math.max(0, (student.balance ?? 0) + delta);
+    const numericAmount = Number(amount);
+    const currentBalance = student.balance ?? 0;
 
-    // ✅ Every balance change now produces a Transaction row too — this was
-    // previously a silent mutation with no ledger trace.
+    // ✅ FIX: a deduction larger than the current balance is now rejected
+    // outright — no mutation, no Transaction row — instead of silently
+    // clamping the balance to zero. The admin needs to see that it failed
+    // and why, rather than have the student's balance quietly zeroed for
+    // an amount that was never actually deducted in full.
+    if (action === 'deductBalance' && numericAmount > currentBalance) {
+      return NextResponse.json(
+        {
+          error: 'insufficient_balance',
+          message: `Deduction of ${numericAmount} exceeds current balance of ${currentBalance}`,
+          currentBalance,
+        },
+        { status: 400 }
+      );
+    }
+
+    const delta = action === 'addBalance' ? numericAmount : -numericAmount;
+    const newBalance = currentBalance + delta;
+
+    // ✅ Every balance change still produces a Transaction row for the ledger.
     await prisma.$transaction([
       prisma.user.update({ where: { id }, data: { balance: newBalance } }),
       prisma.transaction.create({

@@ -47,6 +47,11 @@ const gradeLabelMap: Record<string, { ar: string; en: string }> = {
   'grade-12': { ar: 'الصف الثالث الثانوي', en: 'Grade 12' },
 };
 
+// ✅ NEW: same Egyptian mobile format already enforced on admin/students
+// (01 + 9 digits = 11 digits total). Reused here so a student can't submit
+// a wallet top-up request with an obviously-malformed sender phone number.
+const EG_PHONE_REGEX = /^01[0-9]{9}$/;
+
 interface Profile {
   id: number;
   fullName: string;
@@ -170,6 +175,7 @@ const content = {
     fawryComingSoon: 'قريبًا',
     topUpSenderPhone: 'رقم الهاتف المُرسِل منه',
     topUpSenderPhonePlaceholder: '01xxxxxxxxx',
+    topUpSenderPhoneInvalid: 'أدخل رقم هاتف مصري صحيح (01xxxxxxxxx)',
     topUpProof: 'صورة إثبات التحويل',
     topUpProofHint: 'أرفق لقطة شاشة لعملية التحويل للتحقق منها',
     topUpProofSelected: 'تم اختيار صورة',
@@ -244,6 +250,7 @@ const content = {
     fawryComingSoon: 'Coming soon',
     topUpSenderPhone: 'Sender\u2019s phone number',
     topUpSenderPhonePlaceholder: '01xxxxxxxxx',
+    topUpSenderPhoneInvalid: 'Enter a valid Egyptian phone number (01xxxxxxxxx)',
     topUpProof: 'Transfer proof photo',
     topUpProofHint: 'Attach a screenshot of the transfer so we can verify it',
     topUpProofSelected: 'Photo selected',
@@ -340,6 +347,10 @@ export default function StudentDashboardPage() {
   const [topUpProof, setTopUpProof] = useState<File | null>(null);
   const [topUpLoading, setTopUpLoading] = useState(false);
   const [topUpStatus, setTopUpStatus] = useState<'idle' | 'success' | 'error'>('idle');
+  // ✅ NEW: distinct from topUpStatus's generic error banner — this is a
+  // field-level message shown right under the phone input, cleared as
+  // soon as the student edits the field again.
+  const [senderPhoneError, setSenderPhoneError] = useState('');
 
   const fetchDashboard = () => {
     fetch('/api/student/dashboard')
@@ -366,7 +377,20 @@ export default function StudentDashboardPage() {
 
   const handleTopUp = async () => {
     if (!topUpAmount || Number(topUpAmount) <= 0) return;
-    if (topUpMethod === 'wallet' && (!topUpSenderPhone.trim() || !topUpProof)) return;
+
+    if (topUpMethod === 'wallet') {
+      const phone = topUpSenderPhone.trim();
+      // ✅ NEW: verify the sender phone actually looks like a real Egyptian
+      // mobile number before sending the request, instead of only checking
+      // that the field is non-empty. Blocks obvious typos/garbage input
+      // from ever reaching the API.
+      if (!EG_PHONE_REGEX.test(phone)) {
+        setSenderPhoneError(t.topUpSenderPhoneInvalid);
+        return;
+      }
+      if (!topUpProof) return;
+    }
+    setSenderPhoneError('');
 
     setTopUpLoading(true);
     setTopUpStatus('idle');
@@ -659,11 +683,26 @@ export default function StudentDashboardPage() {
                     <input
                       type="tel"
                       value={topUpSenderPhone}
-                      onChange={(e) => setTopUpSenderPhone(e.target.value)}
+                      onChange={(e) => {
+                        setTopUpSenderPhone(e.target.value);
+                        // ✅ NEW: clear the field-level error as soon as the
+                        // student starts correcting it, rather than leaving
+                        // a stale error message next to freshly-typed input.
+                        if (senderPhoneError) setSenderPhoneError('');
+                      }}
                       placeholder={t.topUpSenderPhonePlaceholder}
-                      className="w-full px-3 py-2 rounded-xl border border-border bg-background text-foreground text-sm outline-none focus:ring-2 focus:ring-primary/30 transition-all mb-2"
+                      className={`w-full px-3 py-2 rounded-xl border bg-background text-foreground text-sm outline-none focus:ring-2 transition-all mb-1 ${
+                        senderPhoneError
+                          ? 'border-red-400 focus:ring-red-200'
+                          : 'border-border focus:ring-primary/30'
+                      }`}
                       dir="ltr"
                     />
+                    {senderPhoneError && (
+                      <p className="text-red-500 text-xs mb-2" style={{ fontFamily: font }}>
+                        {senderPhoneError}
+                      </p>
+                    )}
 
                     {/* Transfer proof photo */}
                     <label
