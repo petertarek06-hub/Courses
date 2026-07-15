@@ -5,6 +5,7 @@ import { Plus_Jakarta_Sans, Cairo } from 'next/font/google';
 import '../components/Header';
 import '../styles/tailwind.css';
 import { Toaster } from 'sonner';
+import ExamReminderWatcher from '@/components/ExamReminderWatcher';
 //import { Terminal } from 'lucide-react';
 
 const plusJakartaSans = Plus_Jakarta_Sans({
@@ -42,6 +43,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
       <body className={`${plusJakartaSans.className} font-sans`}>
         {children}
         <Toaster position="bottom-right" richColors />
+        <ExamReminderWatcher />
 
         <script
           type="module"

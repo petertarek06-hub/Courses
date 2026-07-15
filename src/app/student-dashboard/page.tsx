@@ -29,6 +29,7 @@ import {
   MapPin,
   MessageCircle,
   Pencil,
+  ChevronRight,
 } from 'lucide-react';
 
 const gradeLabelMap: Record<string, { ar: string; en: string }> = {
@@ -144,6 +145,8 @@ const content = {
     passed: 'ناجح',
     failed: 'راسب',
     pending: 'لم يُسلَّم',
+    awaitingGrading: 'بانتظار التصحيح',
+    viewAnswers: 'عرض الإجابات ←',
     score: 'الدرجة',
     passingScore: 'درجة النجاح',
     date: 'التاريخ',
@@ -216,6 +219,8 @@ const content = {
     passed: 'Passed',
     failed: 'Failed',
     pending: 'Not submitted',
+    awaitingGrading: 'Awaiting grading',
+    viewAnswers: 'View answers →',
     score: 'Score',
     passingScore: 'Passing score',
     date: 'Date',
@@ -435,6 +440,47 @@ export default function StudentDashboardPage() {
         </span>
       );
     return null;
+  };
+
+  // An attempt has three possible states, not two:
+  //  - not submitted yet            → submittedAt is null
+  //  - submitted but still awaiting
+  //    manual grading of essay Qs   → submittedAt set, passed is null
+  //  - fully graded                 → submittedAt set, passed is true/false
+  // Previously only the first/third were distinguished, so an ungraded
+  // attempt (passed === null, which is falsy) rendered as "Failed".
+  const examStatusBadge = (attempt: ExamAttempt) => {
+    if (!attempt.submittedAt) {
+      return (
+        <span
+          className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-muted text-muted-foreground flex-shrink-0"
+          style={{ fontFamily: font }}
+        >
+          <Clock size={11} />
+          {t.pending}
+        </span>
+      );
+    }
+    if (attempt.passed === null) {
+      return (
+        <span
+          className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-100 text-amber-700 flex-shrink-0"
+          style={{ fontFamily: font }}
+        >
+          <Clock size={11} />
+          {t.awaitingGrading}
+        </span>
+      );
+    }
+    return (
+      <span
+        className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold flex-shrink-0 ${attempt.passed ? 'bg-green-500/10 text-green-600' : 'bg-red-500/10 text-red-500'}`}
+        style={{ fontFamily: font }}
+      >
+        {attempt.passed ? <CheckCircle size={11} /> : <XCircle size={11} />}
+        {attempt.passed ? t.passed : t.failed}
+      </span>
+    );
   };
 
   if (loading) {
@@ -926,65 +972,71 @@ export default function StudentDashboardPage() {
                 </div>
               ) : (
                 <div className="flex flex-col gap-3">
-                  {examAttempts.map((attempt) => (
-                    <div
-                      key={attempt.id}
-                      className="p-4 rounded-xl border border-border bg-background"
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <p
-                            className="font-semibold text-foreground text-sm truncate"
-                            style={{ fontFamily: font }}
-                          >
-                            {attempt.exam.lesson.title}
-                          </p>
-                          <p
-                            className="text-xs text-muted-foreground mt-0.5 truncate"
-                            style={{ fontFamily: font }}
-                          >
-                            {attempt.exam.lesson.course.name}
-                          </p>
+                  {examAttempts.map((attempt) => {
+                    // Only submitted attempts have anything to review —
+                    // an attempt still in progress has no answers page yet.
+                    const isClickable = Boolean(attempt.submittedAt);
+                    return (
+                      <div
+                        key={attempt.id}
+                        onClick={
+                          isClickable
+                            ? () => router.push(`/student-dashboard/attempts/${attempt.id}`)
+                            : undefined
+                        }
+                        className={`p-4 rounded-xl border border-border bg-background transition-all group ${
+                          isClickable
+                            ? 'cursor-pointer hover:bg-muted/20 hover:border-primary/40'
+                            : ''
+                        }`}
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <p
+                              className="font-semibold text-foreground text-sm truncate"
+                              style={{ fontFamily: font }}
+                            >
+                              {attempt.exam.lesson.title}
+                            </p>
+                            <p
+                              className="text-xs text-muted-foreground mt-0.5 truncate"
+                              style={{ fontFamily: font }}
+                            >
+                              {attempt.exam.lesson.course.name}
+                            </p>
+                          </div>
+                          {examStatusBadge(attempt)}
                         </div>
-                        {attempt.submittedAt ? (
-                          <span
-                            className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold flex-shrink-0 ${attempt.passed ? 'bg-green-500/10 text-green-600' : 'bg-red-500/10 text-red-500'}`}
-                            style={{ fontFamily: font }}
-                          >
-                            {attempt.passed ? <CheckCircle size={11} /> : <XCircle size={11} />}
-                            {attempt.passed ? t.passed : t.failed}
-                          </span>
-                        ) : (
-                          <span
-                            className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-muted text-muted-foreground flex-shrink-0"
-                            style={{ fontFamily: font }}
-                          >
-                            <Clock size={11} />
-                            {t.pending}
-                          </span>
+                        {attempt.submittedAt && (
+                          <div className="flex items-center justify-between mt-2">
+                            <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                              <span style={{ fontFamily: font }}>
+                                {t.score}:{' '}
+                                <span className="font-bold text-foreground">
+                                  {attempt.score ?? '—'}
+                                </span>
+                              </span>
+                              <span style={{ fontFamily: font }}>
+                                {t.passingScore}:{' '}
+                                <span className="font-bold text-foreground">
+                                  {attempt.exam.passingScore}
+                                </span>
+                              </span>
+                              <span dir="ltr">
+                                {new Date(attempt.submittedAt).toLocaleDateString('en-EG')}
+                              </span>
+                            </div>
+                            <span
+                              className="text-xs font-bold text-primary opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-0.5 flex-shrink-0"
+                              style={{ fontFamily: font }}
+                            >
+                              {t.viewAnswers}
+                            </span>
+                          </div>
                         )}
                       </div>
-                      {attempt.submittedAt && (
-                        <div className="flex items-center gap-4 mt-2 text-xs text-muted-foreground">
-                          <span style={{ fontFamily: font }}>
-                            {t.score}:{' '}
-                            <span className="font-bold text-foreground">
-                              {attempt.score ?? '—'}
-                            </span>
-                          </span>
-                          <span style={{ fontFamily: font }}>
-                            {t.passingScore}:{' '}
-                            <span className="font-bold text-foreground">
-                              {attempt.exam.passingScore}
-                            </span>
-                          </span>
-                          <span dir="ltr">
-                            {new Date(attempt.submittedAt).toLocaleDateString('en-EG')}
-                          </span>
-                        </div>
-                      )}
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </SectionCard>

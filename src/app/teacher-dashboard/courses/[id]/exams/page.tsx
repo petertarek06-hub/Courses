@@ -1,3 +1,4 @@
+//src\app\teacher-dashboard\courses\[id]\exams\page.tsx
 'use client';
 import React, { useEffect, useState, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';

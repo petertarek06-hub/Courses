@@ -100,3 +100,153 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     answers,
   });
 }
+
+export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const user = await getAuthUser();
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  if (user.role !== 'teacher' && user.role !== 'admin') {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  }
+
+  const { id } = await params;
+  const attemptId = Number(id);
+  if (!Number.isFinite(attemptId)) {
+    return NextResponse.json({ error: 'Invalid attempt id' }, { status: 400 });
+  }
+
+  const body = await req.json().catch(() => null);
+  const answerId = Number(body?.answerId);
+  const gradedScore = Number(body?.gradedScore);
+  const graderNotes: string | null =
+    typeof body?.graderNotes === 'string' ? body.graderNotes : null;
+
+  if (!Number.isFinite(answerId)) {
+    return NextResponse.json({ error: 'Invalid answerId' }, { status: 400 });
+  }
+  if (!Number.isFinite(gradedScore) || gradedScore < 0) {
+    return NextResponse.json({ error: 'Invalid gradedScore' }, { status: 400 });
+  }
+
+  // Load the attempt (with course ownership + all answers/marks) so we can
+  // both authorize the request and recompute the attempt's total score.
+  // ✅ NEW: also select the lesson's id (not just course.teacherId) — we
+  // need it below to upsert LessonProgress once the attempt is fully
+  // graded and passed, otherwise essay-based exams never contributed to
+  // course progress the way auto-graded exams already do.
+  const attempt = await prisma.examAttempt.findUnique({
+    where: { id: attemptId },
+    include: {
+      exam: {
+        include: {
+          lesson: { select: { id: true, course: { select: { teacherId: true } } } },
+        },
+      },
+      answers: {
+        include: {
+          examQuestion: {
+            include: { question: { select: { type: true } } },
+          },
+        },
+      },
+    },
+  });
+
+  if (!attempt) return NextResponse.json({ error: 'Attempt not found' }, { status: 404 });
+
+  if (user.role === 'teacher' && attempt.exam.lesson.course.teacherId !== user.id) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  }
+
+  const targetAnswer = attempt.answers.find((a) => a.id === answerId);
+  if (!targetAnswer) {
+    return NextResponse.json({ error: 'Answer not found on this attempt' }, { status: 404 });
+  }
+  if (targetAnswer.examQuestion.question.type !== 'essay') {
+    return NextResponse.json(
+      { error: 'Only essay answers can be graded manually' },
+      { status: 400 }
+    );
+  }
+
+  const mark = targetAnswer.examQuestion.mark;
+  const safeScore = Math.min(gradedScore, mark);
+  const isCorrect = safeScore >= mark;
+
+  const updatedAnswer = await prisma.attemptAnswer.update({
+    where: { id: answerId },
+    data: {
+      gradedScore: safeScore,
+      isCorrect,
+      graderNotes: graderNotes?.trim() || null,
+    },
+  });
+
+  // Recompute the attempt's overall score once every answer has been graded.
+  const allAnswers = attempt.answers.map((a) =>
+    a.id === answerId ? { ...a, gradedScore: safeScore, isCorrect } : a
+  );
+  const allGraded = allAnswers.every((a) => a.isCorrect !== null);
+
+  let attemptScore = attempt.score;
+  let attemptPassed = attempt.passed;
+
+  if (allGraded) {
+    const totalMark = allAnswers.reduce((sum, a) => sum + a.examQuestion.mark, 0);
+    const earned = allAnswers.reduce(
+      (sum, a) =>
+        sum +
+        (a.examQuestion.question.type === 'essay'
+          ? (a.gradedScore ?? 0)
+          : a.isCorrect
+            ? a.examQuestion.mark
+            : 0),
+      0
+    );
+    attemptScore = totalMark > 0 ? Math.round((earned / totalMark) * 100) : 0;
+    attemptPassed =
+      attemptScore >=
+      (
+        await prisma.exam.findUniqueOrThrow({
+          where: { id: attempt.examId },
+          select: { passingScore: true },
+        })
+      ).passingScore;
+
+    await prisma.examAttempt.update({
+      where: { id: attemptId },
+      data: { score: attemptScore, passed: attemptPassed },
+    });
+
+    // ✅ NEW: mirror the same LessonProgress upsert used for auto-graded
+    // exams in /api/student/exam/[lessonId]. Essay-containing exams only
+    // learn their final pass/fail status here, once every answer has a
+    // grade — so this is the only place that can mark the lesson complete
+    // for that case. Without it, an essay exam's course progress would
+    // stay stuck even after the student passed.
+    if (attemptPassed) {
+      await prisma.lessonProgress.upsert({
+        where: {
+          studentId_lessonId: { studentId: attempt.studentId, lessonId: attempt.exam.lesson.id },
+        },
+        create: {
+          studentId: attempt.studentId,
+          lessonId: attempt.exam.lesson.id,
+          completed: true,
+          completedAt: new Date(),
+        },
+        update: {
+          completed: true,
+          completedAt: new Date(),
+        },
+      });
+    }
+  }
+
+  return NextResponse.json({
+    answerId: updatedAnswer.id,
+    gradedScore: updatedAnswer.gradedScore,
+    isCorrect: updatedAnswer.isCorrect,
+    graderNotes: updatedAnswer.graderNotes,
+    attempt: { score: attemptScore, passed: attemptPassed },
+  });
+}

@@ -128,7 +128,7 @@ export default function HeroSection({ lang, user }: Props) {
     user?.role === 'admin'
       ? '/admin'
       : user?.role === 'teacher'
-        ? '/instructor-dashboard'
+        ? '/teacher-dashboard'
         : '/student-dashboard';
 
   return (

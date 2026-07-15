@@ -10,7 +10,7 @@ const content = {
     headline: 'تعلّم بذكاء',
     subheadline: 'تفوّق بثقة',
     bullets: [
-      '✅ أكثر من 165 كورس في جميع المواد',
+      '✅ أكثر من 50 كورس في جميع المواد',
       '✅ دروس فيديو مشفرة وحصرية',
       '✅ امتحانات تفاعلية وتتبع الأداء',
       '✅ دفع آمن عبر المحفظة الذكية أو الكاش',
@@ -20,7 +20,7 @@ const content = {
     headline: 'Learn Smart',
     subheadline: 'Excel with Confidence',
     bullets: [
-      '✅ 165+ courses across all subjects',
+      '✅ 50+ courses across all subjects',
       '✅ Encrypted exclusive video lessons',
       '✅ Interactive exams and progress tracking',
       '✅ Safe payment via smart wallet or cash',

@@ -278,7 +278,7 @@ export default function AdminPage() {
                       className="px-2 sm:px-4 py-2 sm:py-4 text-center align-middle border-b border-border text-muted-foreground text-[10px] sm:text-xs"
                       dir="ltr"
                     >
-                      z{new Date(u.createdAt).toLocaleDateString('en-EG')}
+                      {new Date(u.createdAt).toLocaleDateString('en-EG')}
                     </td>
                   </tr>
                 ))

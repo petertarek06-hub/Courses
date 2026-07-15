@@ -331,11 +331,13 @@ function EssayCard({
   answer,
   lang,
   font,
+  attemptId,
   onGraded,
 }: {
   answer: Answer;
   lang: 'ar' | 'en';
   font?: string;
+  attemptId: string;
   onGraded: (
     answerId: number,
     gradedScore: number,
@@ -358,7 +360,7 @@ function EssayCard({
     }
     setSaving(true);
     try {
-      const res = await fetch('/api/teacher/grade', {
+      const res = await fetch(`/api/teacher/attempts/${attemptId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -677,6 +679,7 @@ export default function AttemptDetailPage() {
                     answer={answer}
                     lang={lang}
                     font={font}
+                    attemptId={attemptId}
                     onGraded={handleGraded}
                   />
                 ) : (
