@@ -13,6 +13,7 @@ import {
   X,
   BookOpen,
   ListVideo,
+  ClipboardList,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAdminLang } from '../Adminshell';
@@ -134,6 +135,7 @@ const content = {
     title: 'الكورسات',
     search: 'بحث باسم الكورس أو المادة...',
     addCourse: 'إضافة كورس',
+
     name: 'اسم الكورس',
     subject: 'المادة',
     teacher: 'المدرس',
@@ -173,6 +175,7 @@ const content = {
     confirmDeleteBtn: 'حذف نهائيًا',
     missingFields: 'يرجى تعبئة جميع الحقول المطلوبة',
     noTeachers: 'لا يوجد مدرسون — أضف مدرسًا أولاً',
+    manageExams: 'الامتحانات والتصحيح',
   },
   en: {
     title: 'Courses',
@@ -217,6 +220,7 @@ const content = {
     confirmDeleteBtn: 'Delete Permanently',
     missingFields: 'Please fill all required fields',
     noTeachers: 'No teachers found — add a teacher first',
+    manageExams: 'Exams & Grading',
   },
 };
 
@@ -564,6 +568,14 @@ export default function AdminCoursesPage() {
                         >
                           <Trash2 size={13} className="sm:hidden" />
                           <Trash2 size={15} className="hidden sm:block" />
+                        </button>
+                        <button
+                          onClick={() => router.push(`/admin/courses/${course.id}/exams`)}
+                          title={t.manageExams}
+                          className="p-1.5 rounded-lg text-muted-foreground hover:bg-amber-50 hover:text-amber-600 transition-colors"
+                        >
+                          <ClipboardList size={13} className="sm:hidden" />
+                          <ClipboardList size={15} className="hidden sm:block" />
                         </button>
                       </div>
                     </td>

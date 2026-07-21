@@ -1,3 +1,4 @@
+//src\app\api\teacher\attempts\[id]\route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { getAuthUser } from '@/lib/auth';
@@ -216,13 +217,6 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       where: { id: attemptId },
       data: { score: attemptScore, passed: attemptPassed },
     });
-
-    // ✅ NEW: mirror the same LessonProgress upsert used for auto-graded
-    // exams in /api/student/exam/[lessonId]. Essay-containing exams only
-    // learn their final pass/fail status here, once every answer has a
-    // grade — so this is the only place that can mark the lesson complete
-    // for that case. Without it, an essay exam's course progress would
-    // stay stuck even after the student passed.
     if (attemptPassed) {
       await prisma.lessonProgress.upsert({
         where: {

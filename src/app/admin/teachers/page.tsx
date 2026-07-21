@@ -34,7 +34,7 @@ function isValidEgyptPhone(phone: string): boolean {
   return EGYPT_PHONE_RE.test(phone.trim());
 }
 
-const EGYPT_WHATSAPP_RE = /^201[0125]\d{8}$/;
+const EGYPT_WHATSAPP_RE = /^01[0125]\d{8}$/;
 function isValidEgyptWhatsapp(wa: string): boolean {
   return wa.trim() === '' || EGYPT_WHATSAPP_RE.test(wa.trim());
 }
