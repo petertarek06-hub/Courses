@@ -3,9 +3,6 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getAuthUser } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 
-// Settings live in a single row. SQL Server's identity column won't accept
-// an explicit id, so we treat whichever row was created first as "the"
-// singleton, rather than forcing id = 1.
 async function getOrCreateSettings() {
   const existing = await prisma.centerSettings.findFirst({
     orderBy: { id: 'asc' },

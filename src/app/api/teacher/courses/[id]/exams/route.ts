@@ -6,7 +6,7 @@ import { getAuthUser } from '@/lib/auth';
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const user = await getAuthUser();
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  if (user.role !== 'teacher' && user.role !== 'admin') {
+  if (user.role !== 'teacher' && user.role !== 'admin' && user.role !== 'assistant') {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   }
 

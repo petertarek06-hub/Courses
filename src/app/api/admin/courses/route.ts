@@ -1,10 +1,11 @@
+//src\app\api\admin\courses\route.ts
 import { NextRequest, NextResponse } from 'next/server';
-import { getAuthUser } from '@/lib/auth';
+import { getAuthUser, hasAdminAccess, isAdmin } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 
 export async function GET() {
   const user = await getAuthUser();
-  if (!user || user.role !== 'admin')
+  if (!user || !hasAdminAccess(user.role))
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const courses = await prisma.course.findMany({
@@ -21,7 +22,7 @@ export async function GET() {
 
 export async function POST(req: NextRequest) {
   const user = await getAuthUser();
-  if (!user || user.role !== 'admin')
+  if (!user || !hasAdminAccess(user.role))
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const body = await req.json();
@@ -54,7 +55,7 @@ export async function POST(req: NextRequest) {
 
 export async function PATCH(req: NextRequest) {
   const user = await getAuthUser();
-  if (!user || user.role !== 'admin')
+  if (!user || !hasAdminAccess(user.role))
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const body = await req.json();
@@ -93,7 +94,7 @@ export async function PATCH(req: NextRequest) {
 
 export async function DELETE(req: NextRequest) {
   const user = await getAuthUser();
-  if (!user || user.role !== 'admin')
+  if (!user || !isAdmin(user.role))
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const { id } = await req.json();

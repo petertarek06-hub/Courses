@@ -226,7 +226,7 @@ const content = {
 
 // ── Main Component ─────────────────────────────────────────────
 export default function AdminCoursesPage() {
-  const { lang, isRtl } = useAdminLang();
+  const { lang, isRtl, canDelete } = useAdminLang();
   const router = useRouter();
   const t = content[lang];
   const font = isRtl ? 'var(--font-cairo)' : undefined;
@@ -561,14 +561,16 @@ export default function AdminCoursesPage() {
                             </>
                           )}
                         </button>
-                        <button
-                          onClick={() => setDeleteCourse(course)}
-                          title={t.delete}
-                          className="p-1.5 rounded-lg text-muted-foreground hover:bg-red-50 hover:text-red-500 transition-colors"
-                        >
-                          <Trash2 size={13} className="sm:hidden" />
-                          <Trash2 size={15} className="hidden sm:block" />
-                        </button>
+                        {canDelete && (
+                          <button
+                            onClick={() => setDeleteCourse(course)}
+                            title={t.delete}
+                            className="p-1.5 rounded-lg text-muted-foreground hover:bg-red-50 hover:text-red-500 transition-colors"
+                          >
+                            <Trash2 size={13} className="sm:hidden" />
+                            <Trash2 size={15} className="hidden sm:block" />
+                          </button>
+                        )}
                         <button
                           onClick={() => router.push(`/admin/courses/${course.id}/exams`)}
                           title={t.manageExams}

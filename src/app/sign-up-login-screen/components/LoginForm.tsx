@@ -32,7 +32,7 @@ const content = {
     phoneRequired: 'رقم الهاتف مطلوب',
     phonePattern: 'أدخل رقم هاتف مصري صحيح (01xxxxxxxxx)',
     passwordRequired: 'كلمة المرور مطلوبة',
-    passwordMin: 'كلمة المرور يجب أن تكون 8 أحرف على الأقل', // ✅ Fixed: was 6
+    passwordMin: 'كلمة المرور يجب أن تكون 8 أحرف على الأقل',
   },
   en: {
     phoneLabel: 'Phone Number',
@@ -49,7 +49,7 @@ const content = {
     phoneRequired: 'Phone number is required',
     phonePattern: 'Enter a valid Egyptian phone number (01xxxxxxxxx)',
     passwordRequired: 'Password is required',
-    passwordMin: 'Password must be at least 8 characters', // ✅ Fixed: was 6
+    passwordMin: 'Password must be at least 8 characters',
   },
 };
 
@@ -81,7 +81,7 @@ export default function LoginForm({ lang, onSwitchToRegister }: Props) {
         setError('phone', { message: result.error });
       } else {
         notifySuccess(t.successMsg);
-        if (result.role === 'admin') {
+        if (result.role === 'admin' || result.role === 'assistant') {
           window.location.href = '/admin';
         } else if (result.role === 'teacher') {
           window.location.href = '/teacher-dashboard';

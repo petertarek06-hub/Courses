@@ -19,37 +19,62 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'بيانات غير صحيحة' }, { status: 401 });
     }
 
-    // Look up user
+    // Look up user first — students, teachers, admins, assistants all live here
     const user = await prisma.user.findUnique({ where: { phone } });
-    if (!user) {
+
+    if (user) {
+      // ✅ Check if account is suspended
+      if (user.isActive === false) {
+        return NextResponse.json(
+          { error: 'تم تعليق هذا الحساب. تواصل مع الإدارة.' },
+          { status: 403 }
+        );
+      }
+
+      const isValid = await comparePassword(password, user.password);
+      if (!isValid) {
+        return NextResponse.json({ error: 'بيانات غير صحيحة' }, { status: 401 });
+      }
+
+      await setAuthCookie({
+        id: user.id,
+        phone: user.phone,
+        role: user.role,
+        fullName: user.fullName,
+      });
+
+      return NextResponse.json({
+        success: true,
+        role: user.role,
+        fullName: user.fullName,
+      });
+    }
+
+    // No matching student/teacher/admin — check the Guardian table before failing.
+    // Guardians share the same phone+password login form but live in their own
+    // table and only ever get a read-only "guardian" role on the JWT.
+    const guardian = await prisma.guardian.findUnique({ where: { phone } });
+    if (!guardian) {
       return NextResponse.json({ error: 'بيانات غير صحيحة' }, { status: 401 });
     }
 
-    // ✅ Check if account is suspended
-    if (user.isActive === false) {
-      return NextResponse.json(
-        { error: 'تم تعليق هذا الحساب. تواصل مع الإدارة.' },
-        { status: 403 }
-      );
-    }
-
-    // Verify password using shared helper
-    const isValid = await comparePassword(password, user.password); // ✅ Use helper from auth.ts
-    if (!isValid) {
+    const isGuardianValid = await comparePassword(password, guardian.password);
+    if (!isGuardianValid) {
       return NextResponse.json({ error: 'بيانات غير صحيحة' }, { status: 401 });
     }
 
     await setAuthCookie({
-      id: user.id,
-      phone: user.phone,
-      role: user.role,
-      fullName: user.fullName,
+      id: guardian.id,
+      phone: guardian.phone,
+      role: 'guardian',
+      fullName: guardian.fullName,
+      studentId: guardian.studentId,
     });
 
     return NextResponse.json({
       success: true,
-      role: user.role,
-      fullName: user.fullName,
+      role: 'guardian',
+      fullName: guardian.fullName,
     });
   } catch (error) {
     console.error('Login error:', error);

@@ -1,12 +1,16 @@
+//src\app\api\admin\lessons\route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { getAuthUser } from '@/lib/auth';
+import { getAuthUser, hasAdminAccess, isAdmin } from '@/lib/auth';
 
+// Teachers, admins, and assistants can all view/manage lessons.
+// Deletion is gated separately (teachers on their own courses, or admin) —
+// see the extra check inside DELETE below.
 async function authorize(courseId?: number) {
   const user = await getAuthUser();
   if (!user)
     return { user: null, error: NextResponse.json({ error: 'Unauthorized' }, { status: 401 }) };
-  if (user.role !== 'teacher' && user.role !== 'admin')
+  if (user.role !== 'teacher' && !hasAdminAccess(user.role))
     return { user: null, error: NextResponse.json({ error: 'Forbidden' }, { status: 403 }) };
 
   if (user.role === 'teacher' && courseId) {
@@ -342,8 +346,16 @@ export async function DELETE(req: NextRequest) {
   });
   if (!lesson) return NextResponse.json({ error: 'Not found' }, { status: 404 });
 
-  const { error } = await authorize(lesson.courseId);
+  const { user, error } = await authorize(lesson.courseId);
   if (error) return error;
+
+  // Deletion itself is off-limits for assistants specifically. Teachers
+  // deleting lessons on their own courses, and real admins deleting
+  // anything, are both still allowed — `authorize` above already confirmed
+  // the teacher owns this course, so we only need to additionally reject
+  // the assistant role here.
+  if (user!.role !== 'teacher' && !isAdmin(user!.role))
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
 
   await prisma.lesson.delete({ where: { id: Number(id) } });
   return NextResponse.json({ ok: true });

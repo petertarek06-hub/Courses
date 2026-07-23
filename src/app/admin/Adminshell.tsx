@@ -1,3 +1,4 @@
+//src\app\admin\Adminshell.tsx
 'use client';
 import React, { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
@@ -12,6 +13,7 @@ import {
   BookOpen,
   CreditCard,
   Settings,
+  UserCog,
   ChevronLeft,
   ChevronRight,
 } from 'lucide-react';
@@ -21,11 +23,15 @@ import { createContext, useContext } from 'react';
 interface AdminLangContextType {
   lang: 'ar' | 'en';
   isRtl: boolean;
+  role: string | null;
+  canDelete: boolean;
 }
 
 export const AdminLangContext = createContext<AdminLangContextType>({
   lang: 'ar',
   isRtl: true,
+  role: null,
+  canDelete: false,
 });
 
 export function useAdminLang() {
@@ -33,18 +39,38 @@ export function useAdminLang() {
 }
 
 // ── Sidebar links ──────────────────────────────────────────────
-const sidebarLinks = (lang: 'ar' | 'en') => [
-  { label: lang === 'ar' ? 'نظرة عامة' : 'Overview', href: '/admin', icon: LayoutDashboard },
-  { label: lang === 'ar' ? 'الطلاب' : 'Students', href: '/admin/students', icon: Users },
-  {
-    label: lang === 'ar' ? 'المدرسين' : 'Teachers',
-    href: '/admin/teachers',
-    icon: GraduationCap,
-  },
-  { label: lang === 'ar' ? 'الكورسات' : 'Courses', href: '/admin/courses', icon: BookOpen },
-  { label: lang === 'ar' ? 'المدفوعات' : 'Payments', href: '/admin/payments', icon: CreditCard },
-  { label: lang === 'ar' ? 'الإعدادات' : 'Settings', href: '/admin/settings', icon: Settings },
-];
+// Assistants management and Settings are admin-only, so those two links
+// only appear for role === 'admin'. Everything else (Students, Teachers,
+// Courses, Payments) is visible to both roles — delete-specific hiding
+// happens inside each page via `canDelete`.
+const sidebarLinks = (lang: 'ar' | 'en', role: string | null) => {
+  const links = [
+    { label: lang === 'ar' ? 'نظرة عامة' : 'Overview', href: '/admin', icon: LayoutDashboard },
+    { label: lang === 'ar' ? 'الطلاب' : 'Students', href: '/admin/students', icon: Users },
+    {
+      label: lang === 'ar' ? 'المدرسين' : 'Teachers',
+      href: '/admin/teachers',
+      icon: GraduationCap,
+    },
+    { label: lang === 'ar' ? 'الكورسات' : 'Courses', href: '/admin/courses', icon: BookOpen },
+    { label: lang === 'ar' ? 'المدفوعات' : 'Payments', href: '/admin/payments', icon: CreditCard },
+  ];
+
+  if (role === 'admin') {
+    links.splice(3, 0, {
+      label: lang === 'ar' ? 'المساعدين' : 'Assistants',
+      href: '/admin/assistants',
+      icon: UserCog,
+    });
+    links.push({
+      label: lang === 'ar' ? 'الإعدادات' : 'Settings',
+      href: '/admin/settings',
+      icon: Settings,
+    });
+  }
+
+  return links;
+};
 
 // ── Auth check interval (ms) ───────────────────────────────────
 const AUTH_CHECK_INTERVAL = 60 * 1000; // every 60 seconds
@@ -53,10 +79,11 @@ const AUTH_CHECK_INTERVAL = 60 * 1000; // every 60 seconds
 export default function AdminShell({ children }: { children: React.ReactNode }) {
   const { lang, toggleLang } = useLang();
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [role, setRole] = useState<string | null>(null);
   const pathname = usePathname();
   const router = useRouter();
   const isRtl = lang === 'ar';
-  const links = sidebarLinks(lang);
+  const links = sidebarLinks(lang, role);
 
   // ── Periodic session check ─────────────────────────────────
   const checkSession = useCallback(async () => {
@@ -64,7 +91,11 @@ export default function AdminShell({ children }: { children: React.ReactNode }) 
       const res = await fetch('/api/auth/me', { cache: 'no-store' });
       if (!res.ok) {
         router.replace('/sign-up-login-screen');
+        return;
       }
+      const data = await res.json();
+      // Handles either `{ role }` or `{ user: { role } }` response shapes.
+      setRole(data.role ?? data.user?.role ?? null);
     } catch {
       // network error — don't redirect, just wait for next check
     }
@@ -147,7 +178,9 @@ export default function AdminShell({ children }: { children: React.ReactNode }) 
 
         {/* ── Page content ── */}
         <main className="flex-1 p-6 overflow-y-auto">
-          <AdminLangContext.Provider value={{ lang, isRtl }}>{children}</AdminLangContext.Provider>
+          <AdminLangContext.Provider value={{ lang, isRtl, role, canDelete: role === 'admin' }}>
+            {children}
+          </AdminLangContext.Provider>
         </main>
       </div>
 

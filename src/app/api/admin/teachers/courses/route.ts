@@ -1,4 +1,4 @@
-// src/app/api/teacher/courses/route.ts
+// src/app/api/admin/teacher/courses/route.ts
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { getAuthUser } from '@/lib/auth';

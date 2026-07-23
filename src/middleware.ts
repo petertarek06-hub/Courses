@@ -3,16 +3,22 @@ import { jwtVerify, JWTPayload, SignJWT } from 'jose';
 
 const JWT_SECRET = new TextEncoder().encode(process.env.JWT_SECRET || 'educenter-secret-key');
 const COOKIE_NAME = 'educenter_token';
-const COOKIE_MAX_AGE = 60 * 60; // 1 hour
+const COOKIE_MAX_AGE = 60 * 60;
 
 interface UserPayload extends JWTPayload {
   role?: string;
   id?: number;
   phone?: string;
   fullName?: string;
+  studentId?: number; // present only for role === 'guardian'
 }
 
-const protectedRoutes = ['/admin', '/student-dashboard', '/teacher-dashboard'];
+const protectedRoutes = [
+  '/admin',
+  '/student-dashboard',
+  '/teacher-dashboard',
+  '/guardian-dashboard',
+];
 const authRoutes = ['/sign-up-login-screen'];
 
 export async function middleware(req: NextRequest) {
@@ -34,8 +40,18 @@ export async function middleware(req: NextRequest) {
       return NextResponse.redirect(new URL('/sign-up-login-screen', req.url));
     }
 
-    if (pathname.startsWith('/admin') && user.role !== 'admin') {
+    // ✅ Admins and assistants both reach the admin section; the specific
+    // action-level restriction (no deletes for assistants) is enforced
+    // per-endpoint in the API routes, not here.
+    if (pathname.startsWith('/admin') && user.role !== 'admin' && user.role !== 'assistant') {
       return NextResponse.redirect(new URL('/', req.url));
+    }
+
+    // ✅ Settings is admin-only — assistants can reach every other /admin
+    // page, but not this one. Checked after the general /admin gate above,
+    // so an assistant lands on /admin instead of being bounced out entirely.
+    if (pathname.startsWith('/admin/settings') && user.role !== 'admin') {
+      return NextResponse.redirect(new URL('/admin', req.url));
     }
 
     if (pathname.startsWith('/teacher-dashboard') && user.role !== 'teacher') {
@@ -44,6 +60,23 @@ export async function middleware(req: NextRequest) {
 
     if (pathname.startsWith('/student-dashboard') && user.role === 'teacher') {
       return NextResponse.redirect(new URL('/', req.url));
+    }
+
+    // ✅ Guardian dashboard is guardian-only.
+    if (pathname.startsWith('/guardian-dashboard') && user.role !== 'guardian') {
+      return NextResponse.redirect(new URL('/', req.url));
+    }
+
+    // ✅ Guardians are read-only viewers of their linked student — they
+    // don't belong in admin/teacher/student areas even if they somehow
+    // land on one of those URLs.
+    if (
+      user.role === 'guardian' &&
+      (pathname.startsWith('/admin') ||
+        pathname.startsWith('/teacher-dashboard') ||
+        pathname.startsWith('/student-dashboard'))
+    ) {
+      return NextResponse.redirect(new URL('/guardian-dashboard', req.url));
     }
   }
 

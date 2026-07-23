@@ -1,18 +1,22 @@
-//app/api/admin/teachers/route
+//src/app/api/admin/assistants/route.ts
 import { NextRequest, NextResponse } from 'next/server';
-import { getAuthUser, hashPassword, hasAdminAccess, isAdmin } from '@/lib/auth';
+import { getAuthUser, hashPassword, isAdmin } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { writeFile, mkdir, unlink } from 'fs/promises';
 import path from 'path';
 
+// Assistant-account management is kept admin-only across every method —
+// an assistant creating, editing, or suspending other staff accounts is a
+// privilege-escalation risk distinct from running courses/students/payments.
+
 // ── GET ─────────────────────────────────────────────────────────
 export async function GET() {
   const user = await getAuthUser();
-  if (!user || !hasAdminAccess(user.role))
+  if (!user || !isAdmin(user.role))
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-  const teachers = await prisma.user.findMany({
-    where: { role: 'teacher' },
+  const assistants = await prisma.user.findMany({
+    where: { role: 'assistant' },
     orderBy: { createdAt: 'desc' },
     select: {
       id: true,
@@ -26,13 +30,13 @@ export async function GET() {
     },
   });
 
-  return NextResponse.json(teachers);
+  return NextResponse.json(assistants);
 }
 
 // ── POST ────────────────────────────────────────────────────────
 export async function POST(req: NextRequest) {
   const user = await getAuthUser();
-  if (!user || !hasAdminAccess(user.role))
+  if (!user || !isAdmin(user.role))
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const formData = await req.formData();
@@ -61,30 +65,29 @@ export async function POST(req: NextRequest) {
   }
 
   const hashed = await hashPassword(password);
-  const newteacher = await prisma.user.create({
+  const newAssistant = await prisma.user.create({
     data: {
       fullName,
       phone,
       email: email || null,
       password: hashed,
-      role: 'teacher',
+      role: 'assistant',
       avatarUrl,
       whatsappNumber: whatsapp || null,
     },
   });
 
-  return NextResponse.json({ success: true, id: newteacher.id });
+  return NextResponse.json({ success: true, id: newAssistant.id });
 }
 
 // ── PATCH ───────────────────────────────────────────────────────
 export async function PATCH(req: NextRequest) {
   const user = await getAuthUser();
-  if (!user || !hasAdminAccess(user.role))
+  if (!user || !isAdmin(user.role))
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const contentType = req.headers.get('content-type') ?? '';
 
-  // suspend / activate — JSON
   if (contentType.includes('application/json')) {
     const { id, action } = await req.json();
     if (!id || !action)
@@ -101,7 +104,6 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ error: 'Unknown action' }, { status: 400 });
   }
 
-  // update profile — FormData
   const formData = await req.formData();
   const id = Number(formData.get('id'));
   const fullName = formData.get('fullName') as string;

@@ -18,6 +18,7 @@ export interface JwtPayload {
   phone: string;
   role: string;
   fullName: string;
+  studentId?: number; // present only when role === 'guardian': which student they're linked to
 }
 
 export function signToken(payload: JwtPayload): string {
@@ -45,10 +46,13 @@ export async function setAuthCookie(payload: JwtPayload) {
 }
 
 // A JWT can still verify (correct signature, not expired) even after its
-// underlying user row is gone — e.g. the DB was reset, or the account was
-// deleted. This confirms the user still actually exists before trusting the
-// token, and clears the stale cookie if not, so the person isn't stuck
+// underlying row is gone — e.g. the DB was reset, or the account was
+// deleted. This confirms the account still actually exists before trusting
+// the token, and clears the stale cookie if not, so the person isn't stuck
 // looking "logged in" to a ghost session.
+//
+// Guardians live in a separate `Guardian` table (not `User`), so which
+// table we check depends on the role carried in the token itself.
 export async function getAuthUser(): Promise<JwtPayload | null> {
   const cookieStore = await cookies();
   const token = cookieStore.get(COOKIE_NAME)?.value;
@@ -57,10 +61,16 @@ export async function getAuthUser(): Promise<JwtPayload | null> {
   const payload = verifyToken(token);
   if (!payload) return null;
 
-  const exists = await prisma.user.findUnique({
-    where: { id: payload.id },
-    select: { id: true },
-  });
+  const exists =
+    payload.role === 'guardian'
+      ? await prisma.guardian.findUnique({
+          where: { id: payload.id },
+          select: { id: true },
+        })
+      : await prisma.user.findUnique({
+          where: { id: payload.id },
+          select: { id: true },
+        });
 
   if (!exists) {
     cookieStore.delete(COOKIE_NAME);
@@ -81,4 +91,23 @@ export async function hashPassword(password: string): Promise<string> {
 
 export async function comparePassword(plain: string, hashed: string): Promise<boolean> {
   return bcrypt.compare(plain, hashed);
+}
+
+// ── Role helpers ─────────────────────────────────────────────────
+// Single source of truth for "who can do what" in admin.
+// hasAdminAccess: admin dashboard + all admin CRUD except deletion.
+// isAdmin: strictly the admin role — required for any DELETE action,
+// and for managing assistant accounts (create/edit/suspend of staff).
+// isGuardian: strictly the guardian role — read-only access to their
+// linked student's dashboard, nothing else.
+export function hasAdminAccess(role?: string | null): boolean {
+  return role === 'admin' || role === 'assistant';
+}
+
+export function isAdmin(role?: string | null): boolean {
+  return role === 'admin';
+}
+
+export function isGuardian(role?: string | null): boolean {
+  return role === 'guardian';
 }

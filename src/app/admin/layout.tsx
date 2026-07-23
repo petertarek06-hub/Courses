@@ -1,12 +1,12 @@
 //src\app\admin\layout.tsx
 import { redirect } from 'next/navigation';
-import { getAuthUser } from '@/lib/auth';
+import { getAuthUser, hasAdminAccess } from '@/lib/auth';
 import AdminShell from './Adminshell';
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
   const user = await getAuthUser();
 
-  if (!user || user.role !== 'admin') {
+  if (!user || !hasAdminAccess(user.role)) {
     redirect('/');
   }
 

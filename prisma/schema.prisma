@@ -30,10 +30,22 @@ model User {
   processedTopUps  TopUpRequest[]   @relation("AdminTopUpRequests")
   examAttempts     ExamAttempt[]    @relation("StudentExamAttempts")
   progress         LessonProgress[] @relation("StudentProgress")
+    guardians        Guardian[]       @relation("StudentGuardians") 
 
   @@map("users")
 }
+model Guardian {
+  id        Int      @id @default(autoincrement())
+  fullName  String   @db.NVarChar(100)
+  phone     String   @unique @db.VarChar(11)
+  password  String   @db.NVarChar(255)
+  createdAt DateTime @default(now())
 
+  student   User @relation("StudentGuardians", fields: [studentId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  studentId Int
+
+  @@map("guardians")
+}
 // ── Courses ────────────────────────────────────────────────────
 model Course {
   id            Int      @id @default(autoincrement())

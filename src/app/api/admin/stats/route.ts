@@ -1,14 +1,15 @@
+//src\app\api\admin\stats\route.ts
 import { NextResponse } from 'next/server';
 import { getAuthUser } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 
 export async function GET() {
   const user = await getAuthUser();
-  if (!user || user.role !== 'admin') {
+  if (!user || (user.role !== 'admin' && user.role !== 'assistant')) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  const [totalStudents, totalTeachers, totalCourses, revenueAgg, recentStudents] =
+  const [totalStudents, totalTeachers, totalAssistants, totalCourses, revenueAgg, recentStudents] =
     await Promise.all([
       prisma.user.count({
         where: { role: 'student' },
@@ -17,15 +18,13 @@ export async function GET() {
       prisma.user.count({
         where: { role: 'teacher' },
       }),
+      prisma.user.count({
+        where: { role: 'assistant' },
+      }),
 
       // Count all courses
       prisma.course.count(),
 
-      // Sum course-purchase transactions.
-      // No `status` filter needed anymore — Transaction is a pure ledger
-      // now, so every row in it already represents completed, money-moved
-      // activity by definition. Pending/rejected top-ups never make it in
-      // here at all (they live in TopUpRequest until approved).
       prisma.transaction.aggregate({
         _sum: { amount: true },
         where: { type: 'topup' },
@@ -34,7 +33,7 @@ export async function GET() {
       // Last 10 registered users (any role) for the recent table
       prisma.user.findMany({
         orderBy: { createdAt: 'desc' },
-        take: 10,
+        take: 100,
         select: {
           id: true,
           fullName: true,
@@ -50,6 +49,7 @@ export async function GET() {
     totalStudents,
     totalTeachers,
     totalCourses,
+    totalAssistants,
     totalRevenue: revenueAgg._sum.amount ?? 0,
     recentStudents,
   });

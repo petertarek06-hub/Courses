@@ -40,7 +40,7 @@ export default function Header({ lang, onToggleLang, currentPath = '/' }: Header
   const isRtl = lang === 'ar';
 
   const dashboardHref =
-    user?.role === 'admin'
+    user?.role === 'admin' || user?.role === 'assistant'
       ? '/admin'
       : user?.role === 'teacher'
         ? '/teacher-dashboard'
@@ -142,6 +142,11 @@ export default function Header({ lang, onToggleLang, currentPath = '/' }: Header
                     {user.role === 'admin' && (
                       <span className="text-xs bg-primary text-white px-1.5 py-0.5 rounded-md font-bold">
                         {lang === 'ar' ? 'أدمن' : 'Admin'}
+                      </span>
+                    )}
+                    {user.role === 'assistant' && (
+                      <span className="text-xs bg-amber-500/20 text-amber-700 px-1.5 py-0.5 rounded-md font-bold">
+                        {lang === 'ar' ? 'مساعد' : 'assistant'}
                       </span>
                     )}
                     {user.role === 'teacher' && (

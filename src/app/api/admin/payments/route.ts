@@ -1,17 +1,19 @@
 // src/app/api/admin/payments/route.ts
 import { NextRequest, NextResponse } from 'next/server';
-import { getAuthUser } from '@/lib/auth';
+import { getAuthUser, hasAdminAccess } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 
 async function authorizeAdmin() {
   const user = await getAuthUser();
-  if (!user || user.role !== 'admin') return null;
+  if (!user || !hasAdminAccess(user.role)) return null;
   return user;
 }
 
 export async function GET() {
   const admin = await authorizeAdmin();
-  if (!admin) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  if (!admin) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
 
   const [pending, transactions, rejected] = await Promise.all([
     prisma.topUpRequest.findMany({
@@ -46,8 +48,8 @@ export async function GET() {
       amount: t.amount,
       method: t.method,
       status: 'approved' as const,
-      // ✅ NEW: pass the underlying transaction type through so the client
-      // can tell a manual deduction ('adjustment') apart from a credit
+      // Pass the underlying transaction type through so the client can
+      // tell a manual deduction ('adjustment') apart from a credit
       // ('topup') — both were previously indistinguishable once merged
       // into this history list, since `status` is 'approved' for both.
       type: t.type as 'topup' | 'adjustment',
@@ -83,6 +85,11 @@ export async function GET() {
 // transfer proof shows a slightly different figure). When provided, it
 // overwrites the TopUpRequest's stored amount too, so the record reflects
 // what was actually credited, not what was originally asked for.
+//
+// Note: approving/rejecting top-ups is a routine data-entry action, not a
+// deletion, so assistants keep this ability under `hasAdminAccess`. If you
+// later want approval restricted to real admins only, swap the check
+// below to `isAdmin(admin.role)`.
 export async function PATCH(req: NextRequest) {
   const admin = await authorizeAdmin();
   if (!admin) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
