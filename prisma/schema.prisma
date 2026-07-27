@@ -23,17 +23,19 @@ model User {
   balance        Float    @default(0)
   createdAt      DateTime @default(now())
 
-  courses          Course[]         @relation("TeacherCourses")
-  enrollments      Enrollment[]     @relation("StudentEnrollments")
-  transactions     Transaction[]    @relation("StudentTransactions")
-  topUpRequests    TopUpRequest[]   @relation("StudentTopUpRequests")
-  processedTopUps  TopUpRequest[]   @relation("AdminTopUpRequests")
-  examAttempts     ExamAttempt[]    @relation("StudentExamAttempts")
-  progress         LessonProgress[] @relation("StudentProgress")
-    guardians        Guardian[]       @relation("StudentGuardians") 
+  courses           Course[]           @relation("TeacherCourses")
+  enrollments       Enrollment[]       @relation("StudentEnrollments")
+  transactions      Transaction[]      @relation("StudentTransactions")
+  topUpRequests     TopUpRequest[]     @relation("StudentTopUpRequests")
+  processedTopUps   TopUpRequest[]     @relation("AdminTopUpRequests")
+  examAttempts      ExamAttempt[]      @relation("StudentExamAttempts")
+  progress          LessonProgress[]   @relation("StudentProgress")
+  guardians         Guardian[]         @relation("StudentGuardians")
+  teacherPermission TeacherPermission? @relation("TeacherPermissionRow")
 
   @@map("users")
 }
+
 model Guardian {
   id        Int      @id @default(autoincrement())
   fullName  String   @db.NVarChar(100)
@@ -46,19 +48,39 @@ model Guardian {
 
   @@map("guardians")
 }
+
+// ── Teacher Permissions ─────────────────────────────────────────
+// One row per teacher. Missing row = defaults (see /api/teacher/permissions
+// and the admin GET below, which both fill in defaults rather than requiring
+// a row to exist for every teacher).
+model TeacherPermission {
+  id              Int      @id @default(autoincrement())
+  canAddVideo     Boolean  @default(true)
+  canAddExam      Boolean  @default(true)
+  canEditContent  Boolean  @default(true)
+  canViewStudents Boolean  @default(false)
+  canReorder      Boolean  @default(true)
+  updatedAt       DateTime @updatedAt
+
+  teacher   User @relation("TeacherPermissionRow", fields: [teacherId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  teacherId Int  @unique
+
+  @@map("teacher_permissions")
+}
+
 // ── Courses ────────────────────────────────────────────────────
 model Course {
-  id            Int      @id @default(autoincrement())
-  name          String   @db.NVarChar(150)
-  description   String?  @db.NVarChar(500)
-  subject       String   @db.NVarChar(100)
-  academicYear  String   @db.VarChar(20)
-  price         Float    @default(0)
-  isVisible     Boolean  @default(true)
-  createdAt     DateTime @default(now())
+  id           Int      @id @default(autoincrement())
+  name         String   @db.NVarChar(150)
+  description  String?  @db.NVarChar(500)
+  subject      String   @db.NVarChar(100)
+  academicYear String   @db.VarChar(20)
+  price        Float    @default(0)
+  isVisible    Boolean  @default(true)
+  createdAt    DateTime @default(now())
 
-  teacher    User   @relation("TeacherCourses", fields: [teacherId], references: [id], onDelete: Cascade)
-  teacherId  Int
+  teacher   User? @relation("TeacherCourses", fields: [teacherId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  teacherId Int?
 
   lessons       Lesson[]
   enrollments   Enrollment[]
@@ -73,7 +95,7 @@ model Enrollment {
   id         Int      @id @default(autoincrement())
   enrolledAt DateTime @default(now())
 
-  student   User   @relation("StudentEnrollments", fields: [studentId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  student   User @relation("StudentEnrollments", fields: [studentId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   studentId Int
 
   course   Course @relation(fields: [courseId], references: [id], onDelete: NoAction, onUpdate: NoAction)
@@ -87,7 +109,7 @@ model Enrollment {
 model Lesson {
   id        Int      @id @default(autoincrement())
   title     String   @db.NVarChar(200)
-  type      String   @db.VarChar(10)  // "video" | "exam"
+  type      String   @db.VarChar(10) // "video" | "exam"
   order     Int
   isVisible Boolean  @default(true)
   createdAt DateTime @default(now())
@@ -115,6 +137,7 @@ model Video {
 
   @@map("videos")
 }
+
 // ── Exams ──────────────────────────────────────────────────────
 model Exam {
   id              Int       @id @default(autoincrement())
@@ -152,12 +175,12 @@ model QuestionBank {
 
 // ── Exam ↔ Question join ───────────────────────────────────────
 model ExamQuestion {
-  id    Int @id @default(autoincrement())
-  order Int @default(0)
-  mark  Int @default(1)
-
-  exam   Exam @relation(fields: [examId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  examId Int
+  id        Int     @id @default(autoincrement())
+  order     Int     @default(0)
+  mark      Int     @default(1)
+  isVisible Boolean @default(true)
+  exam      Exam    @relation(fields: [examId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  examId    Int
 
   question   QuestionBank @relation(fields: [questionId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   questionId Int
@@ -245,13 +268,12 @@ model CenterSettings {
 // that has actually moved yet. Approving one produces exactly one
 // Transaction row (see below); rejecting one produces none.
 
-
 model TopUpRequest {
   id            Int       @id @default(autoincrement())
   amount        Float
-  method        String    @db.VarChar(20)  // "cash" | "wallet" | "fawry"
+  method        String    @db.VarChar(20) // "cash" | "wallet" | "fawry"
   status        String    @default("pending") @db.VarChar(20) // "pending" | "approved" | "rejected"
-  senderPhone   String?   @db.VarChar(20)   // required for "wallet"
+  senderPhone   String?   @db.VarChar(20) // required for "wallet"
   proofImageUrl String?   @db.NVarChar(500) // required for "wallet"
   notes         String?   @db.NVarChar(300)
   createdAt     DateTime  @default(now())
@@ -276,6 +298,7 @@ model TopUpRequest {
 
   @@map("topup_requests")
 }
+
 // ── Transactions ───────────────────────────────────────────────
 // Pure, append-only ledger: a row exists here if and only if the student's
 // balance actually changed. No pending/rejected states, no unused columns
@@ -291,8 +314,8 @@ model TopUpRequest {
 model Transaction {
   id        Int      @id @default(autoincrement())
   amount    Float
-  type      String   @db.VarChar(20)  // "topup" | "purchase" | "adjustment"
-  method    String   @db.VarChar(20)  // "cash" | "wallet" | "fawry" | "balance" | "manual"
+  type      String   @db.VarChar(20) // "topup" | "purchase" | "adjustment"
+  method    String   @db.VarChar(20) // "cash" | "wallet" | "fawry" | "balance" | "manual"
   notes     String?  @db.NVarChar(300)
   createdAt DateTime @default(now())
 

@@ -81,10 +81,9 @@ interface RawCourse {
     fullName: string;
     avatarUrl: string | null;
     whatsappNumber: string | null;
-  };
+  } | null; // ✅ teacher can now be null (deleted account, course kept)
   _count: { lessons: number; enrollments: number };
 }
-
 export interface Teacher {
   id: string;
   name: string;
@@ -104,14 +103,13 @@ export interface Teacher {
   price: number;
   isEnrolled: boolean;
 }
-
 function normalise(course: RawCourse): Teacher {
   const subjectKey = subjectKeyMap[course.subject.toLowerCase()] ?? 'other';
   const grade = gradeLookup[course.academicYear] ?? {
     ar: course.academicYear,
     en: course.academicYear,
   };
-  const whatsapp = course.teacher.whatsappNumber
+  const whatsapp = course.teacher?.whatsappNumber
     ? `https://wa.me/${course.teacher.whatsappNumber.replace(/\D/g, '')}`
     : null;
   return {
@@ -123,8 +121,8 @@ function normalise(course: RawCourse): Teacher {
     gradeKey: course.academicYear,
     gradeAr: grade.ar,
     gradeEn: grade.en,
-    photo: course.teacher.avatarUrl,
-    photoAlt: course.teacher.fullName,
+    photo: course.teacher?.avatarUrl ?? null,
+    photoAlt: course.teacher?.fullName ?? course.name, // ✅
     whatsapp,
     lessons: course._count.lessons,
     students: course._count.enrollments,
@@ -134,7 +132,6 @@ function normalise(course: RawCourse): Teacher {
     isEnrolled: course.isEnrolled,
   };
 }
-
 export default function CoursesClient() {
   const [lang, setLang] = useState<'ar' | 'en'>('ar');
   const [teachers, setTeachers] = useState<Teacher[]>([]);

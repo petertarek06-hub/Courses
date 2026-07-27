@@ -44,6 +44,7 @@ interface ExamQuestion {
   id: number;
   order: number;
   mark: number;
+  isVisible: boolean; // false = soft-hidden because students already answered it
   question: QuestionBank;
 }
 interface ExamRecord {
@@ -142,6 +143,12 @@ const T = {
     totalMarks: 'إجمالي الدرجات',
     markUnit: 'درجة',
     markLabel: 'الدرجة',
+    // ── Hidden exam questions ──
+    hiddenQuestionBadge: 'مخفي',
+    hiddenQuestionHint:
+      'تمت إجابة الطلاب على هذا السؤال، فتم إخفاؤه بدلاً من حذفه للحفاظ على درجاتهم',
+    questionHiddenToast: 'لا يمكن حذف هذا السؤال لأن طلابًا أجابوا عليه، فتم إخفاؤه بدلاً من ذلك',
+    unhideOnReadd: 'إعادة إضافته من البنك ستُظهره للطلاب مجددًا',
     save: 'حفظ',
     cancel: 'إلغاء',
     delete: 'حذف',
@@ -235,6 +242,13 @@ const T = {
     totalMarks: 'Total marks',
     markUnit: 'pts',
     markLabel: 'Mark',
+    // ── Hidden exam questions ──
+    hiddenQuestionBadge: 'Hidden',
+    hiddenQuestionHint:
+      'Students already answered this question, so it was hidden instead of deleted to preserve their grades',
+    questionHiddenToast:
+      "Can't delete — students already answered this question, so it was hidden instead",
+    unhideOnReadd: 'Re-adding it from the bank will make it visible to students again',
     save: 'Save',
     cancel: 'Cancel',
     delete: 'Delete',
@@ -1664,14 +1678,24 @@ function ExamsTab({
     setAddingQs(false);
   };
 
+  // ✅ NEW: the API hard-deletes a question with no student answers, but
+  // soft-hides (isVisible: false) one that already has answers — because
+  // hard-deleting it would violate the FK on attempt_answers and destroy
+  // grading history. Read `hidden` from the response and toast accordingly
+  // instead of always claiming it was deleted.
   const handleRemoveEQ = async (lessonId: number, eqId: number) => {
-    await fetch('/api/admin/lessons', {
+    const res = await fetch('/api/admin/lessons', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ id: lessonId, action: 'removeExamQuestion', examQuestionId: eqId }),
     });
+    const data = await res.json().catch(() => null);
     onRefresh();
-    toast.success(t.deletedOk);
+    if (data?.hidden) {
+      toast.warning(t.questionHiddenToast);
+    } else {
+      toast.success(t.deletedOk);
+    }
   };
 
   const handleReorderEQ = async (lessonId: number, eqId: number, dir: 'up' | 'down') => {
@@ -1706,9 +1730,21 @@ function ExamsTab({
     ? (lessons.find((l) => l.id === manageLesson.id) ?? null)
     : null;
 
+  // ✅ NEW: hidden questions no longer count toward the "questions in this
+  // exam" / total-marks figures shown to the admin — they're not part of
+  // the live exam anymore, just kept around (grayed out, below) so grading
+  // history stays intelligible.
+  const visibleExamQuestions =
+    currentManage?.exam?.examQuestions.filter((eq) => eq.isVisible) ?? [];
+  const hiddenExamQuestions =
+    currentManage?.exam?.examQuestions.filter((eq) => !eq.isVisible) ?? [];
+
+  // ✅ NEW: a question already in the exam but hidden should still show up
+  // in the "add from bank" picker — selecting it calls addExamQuestions,
+  // which un-hides it on the backend (see route.ts).
   const filteredBank = questions.filter((q) => {
-    const inExam = currentManage?.exam?.examQuestions.some((eq) => eq.question.id === q.id);
-    return !inExam && (!bankFilter || q.lessonTag === bankFilter);
+    const inVisibleExam = visibleExamQuestions.some((eq) => eq.question.id === q.id);
+    return !inVisibleExam && (!bankFilter || q.lessonTag === bankFilter);
   });
 
   const minDatetimeLocal = toDatetimeLocal(new Date());
@@ -1783,7 +1819,8 @@ function ExamsTab({
                     </span>
                     <span className="text-[10px] sm:text-xs text-muted-foreground flex items-center gap-1">
                       <HelpCircle size={10} />
-                      {lesson.exam?.examQuestions.length ?? 0} {t.questions}
+                      {lesson.exam?.examQuestions.filter((eq) => eq.isVisible).length ?? 0}{' '}
+                      {t.questions}
                     </span>
                   </div>
                 </div>
@@ -2006,18 +2043,17 @@ function ExamsTab({
                 style={{ fontFamily: font }}
               >
                 <ClipboardList size={13} className="text-accent" />
-                {t.examHasQuestions} ({currentManage.exam?.examQuestions.length ?? 0})
-                {!!currentManage.exam?.examQuestions.length && (
+                {t.examHasQuestions} ({visibleExamQuestions.length})
+                {!!visibleExamQuestions.length && (
                   <span
                     className="text-[10px] sm:text-xs px-1.5 sm:px-2 py-0.5 rounded-full bg-accent/10 text-accent font-bold"
                     style={{ fontFamily: font }}
                   >
-                    {t.totalMarks}:{' '}
-                    {currentManage.exam!.examQuestions.reduce((sum, eq) => sum + eq.mark, 0)}
+                    {t.totalMarks}: {visibleExamQuestions.reduce((sum, eq) => sum + eq.mark, 0)}
                   </span>
                 )}
               </h3>
-              {!currentManage.exam?.examQuestions.length ? (
+              {!visibleExamQuestions.length ? (
                 <div className="rounded-xl border border-dashed border-border py-5 sm:py-6 text-center">
                   <AlertCircle
                     size={20}
@@ -2032,7 +2068,7 @@ function ExamsTab({
                 </div>
               ) : (
                 <div className="rounded-xl border border-border overflow-hidden divide-y divide-border">
-                  {currentManage.exam!.examQuestions.map((eq, idx) => (
+                  {visibleExamQuestions.map((eq, idx) => (
                     <div
                       key={eq.id}
                       className="flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-2.5 sm:py-3 bg-card hover:bg-muted/10 transition-colors"
@@ -2047,7 +2083,7 @@ function ExamsTab({
                         </button>
                         <button
                           onClick={() => handleReorderEQ(currentManage.id, eq.id, 'down')}
-                          disabled={idx === currentManage.exam!.examQuestions.length - 1}
+                          disabled={idx === visibleExamQuestions.length - 1}
                           className="p-0.5 text-muted-foreground hover:text-foreground disabled:opacity-20"
                         >
                           <ChevronDown size={11} />
@@ -2109,6 +2145,43 @@ function ExamsTab({
                   ))}
                 </div>
               )}
+
+              {/* ✅ NEW: hidden questions — kept for grading history, grayed
+                  out, not reorderable/editable/removable-again. Re-selecting
+                  the same question in "Add from bank" below un-hides it. */}
+              {hiddenExamQuestions.length > 0 && (
+                <div className="mt-2.5 sm:mt-3 rounded-xl border border-dashed border-border overflow-hidden divide-y divide-border opacity-60">
+                  {hiddenExamQuestions.map((eq) => (
+                    <div
+                      key={eq.id}
+                      className="flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-2.5 sm:py-3 bg-muted/20"
+                      title={t.hiddenQuestionHint}
+                    >
+                      <EyeOff size={12} className="text-muted-foreground flex-shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        <p
+                          className="text-[10px] sm:text-xs font-semibold text-foreground truncate line-through"
+                          style={{ fontFamily: font }}
+                        >
+                          {eq.question.text}
+                        </p>
+                        <span
+                          className="text-[10px] sm:text-xs text-muted-foreground"
+                          style={{ fontFamily: font }}
+                        >
+                          {t.hiddenQuestionHint}
+                        </span>
+                      </div>
+                      <span
+                        className="text-[10px] sm:text-xs px-1.5 sm:px-2 py-0.5 rounded-full bg-muted text-muted-foreground font-bold flex-shrink-0"
+                        style={{ fontFamily: font }}
+                      >
+                        {t.hiddenQuestionBadge}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
             <div>
               <h3
@@ -2161,6 +2234,7 @@ function ExamsTab({
                 <div className="rounded-xl border border-border overflow-hidden divide-y divide-border max-h-52 sm:max-h-60 overflow-y-auto">
                   {filteredBank.map((q) => {
                     const selected = selectedBankIds.has(q.id);
+                    const wasHidden = hiddenExamQuestions.some((eq) => eq.question.id === q.id);
                     return (
                       <button
                         key={q.id}
@@ -2172,6 +2246,7 @@ function ExamsTab({
                           })
                         }
                         className={`w-full flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-2.5 sm:py-3 text-left transition-colors ${selected ? 'bg-primary/5' : 'hover:bg-muted/20'}`}
+                        title={wasHidden ? t.unhideOnReadd : undefined}
                       >
                         <div
                           className={`w-3.5 h-3.5 sm:w-4 sm:h-4 rounded border-2 flex-shrink-0 flex items-center justify-center transition-all ${selected ? 'border-primary bg-primary' : 'border-border'}`}
@@ -2189,6 +2264,14 @@ function ExamsTab({
                             {q.lessonTag}
                           </span>
                         </div>
+                        {wasHidden && (
+                          <span
+                            className="text-[10px] sm:text-xs px-1.5 sm:px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 font-bold flex-shrink-0"
+                            style={{ fontFamily: font }}
+                          >
+                            {t.hiddenQuestionBadge}
+                          </span>
+                        )}
                         <QTypeBadge type={q.type} t={t} font={font} />
                       </button>
                     );

@@ -10,20 +10,11 @@ import {
   TrendingUp,
   LogIn,
 } from 'lucide-react';
+import type { Teacher } from './CoursesClient';
 
 // ── Types ───────────────────────────────────────────────────────
-interface CourseInfo {
-  id: string; // "course-12" format
-  nameAr: string;
-  nameEn: string;
-  subjectAr: string;
-  subjectEn: string;
-  price: number;
-  color: string; // e.g. "bg-primary/10 text-primary"
-}
-
 interface Props {
-  course: CourseInfo | null; // null = modal closed
+  course: Teacher | null; // null = modal closed
   lang: 'ar' | 'en';
   onClose: () => void;
   onEnrolled: (courseId: string) => void; // called after successful enroll
@@ -156,7 +147,7 @@ export default function EnrollModal({ course, lang, onClose, onEnrolled }: Props
   const canEnroll = isFree || balance >= price;
   const remaining = balance - price;
   const courseId = course.id.replace('course-', '');
-  const courseName = isRtl ? course.nameAr : course.nameEn;
+  const courseName = course.name;
   const accentBg = course.color.split(' ')[0];
   const accentText = course.color.split(' ')[1];
 
@@ -200,7 +191,7 @@ export default function EnrollModal({ course, lang, onClose, onEnrolled }: Props
               className={`inline-block mt-2 px-2.5 py-0.5 rounded-full text-xs font-bold ${accentBg} ${accentText}`}
               style={fontStyle}
             >
-              {isRtl ? course.subjectAr : course.subjectEn}
+              {course.subject}
             </span>
           </div>
 
@@ -225,7 +216,8 @@ export default function EnrollModal({ course, lang, onClose, onEnrolled }: Props
               </p>
               <a
                 href="/sign-up-login-screen"
-                className="block w-full py-3 rounded-xl bg-primary text-white font-bold text-sm text-center hover:bg-primary/90 transition-colors"
+                className="block w-full py-3 rounded-xl bg-primary
+              text-white font-bold text-sm text-center hover:bg-primary/90 transition-colors"
                 style={fontStyle}
               >
                 {tx.login}
@@ -350,7 +342,8 @@ export default function EnrollModal({ course, lang, onClose, onEnrolled }: Props
               </p>
               <a
                 href={`/student-dashboard/courses/${courseId}/lessons`}
-                className="block w-full py-3 rounded-xl bg-secondary text-white font-bold text-sm text-center hover:bg-secondary/90 transition-colors"
+                className="block w-full py-3 rounded-xl bg-secondary text-white font-bold text-sm
+              text-center hover:bg-secondary/90 transition-colors"
                 style={fontStyle}
               >
                 {tx.goToCourse}

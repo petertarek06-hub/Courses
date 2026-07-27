@@ -18,6 +18,14 @@ import { toast } from 'sonner';
 import { useAdminLang } from '../Adminshell';
 
 // ── Types ─────────────────────────────────────────────────────
+interface TeacherPermissions {
+  canAddVideo: boolean;
+  canAddExam: boolean;
+  canEditContent: boolean;
+  canViewStudents: boolean;
+  canReorder: boolean;
+}
+
 interface Teacher {
   id: number;
   fullName: string;
@@ -27,6 +35,7 @@ interface Teacher {
   whatsappNumber: string | null;
   isActive: boolean;
   createdAt: string;
+  permissions: TeacherPermissions;
 }
 
 const EGYPT_PHONE_RE = /^01[0125]\d{8}$/;
@@ -37,6 +46,14 @@ function isValidEgyptPhone(phone: string): boolean {
 const EGYPT_WHATSAPP_RE = /^01[0125]\d{8}$/;
 function isValidEgyptWhatsapp(wa: string): boolean {
   return wa.trim() === '' || EGYPT_WHATSAPP_RE.test(wa.trim());
+}
+
+const MIN_PASSWORD_LENGTH = 8;
+function isValidNewPassword(password: string): boolean {
+  return password.length >= MIN_PASSWORD_LENGTH;
+}
+function isValidOptionalPassword(password: string): boolean {
+  return password === '' || password.length >= MIN_PASSWORD_LENGTH;
 }
 
 // ── Translations ──────────────────────────────────────────────
@@ -73,12 +90,13 @@ const content = {
     passwordLabel: 'كلمة المرور',
     passwordPlaceholder: '••••••••',
     passwordEditHint: 'اتركه فارغًا إذا لم تريد تغييره',
+    passwordInvalid: 'كلمة المرور يجب أن تتكون من 8 أحرف على الأقل',
     avatarLabel: 'صورة المدرس (اختياري)',
     avatarBtn: 'اختر صورة',
     whatsappLabel: 'رقم واتساب (اختياري)',
     whatsappPlaceholder: '201XXXXXXXXX',
     whatsappInvalid:
-      'رقم واتساب غير صحيح — يجب أن يبدأ بـ 20 ويتبعه 201 أو 2010 أو 2011 أو 2012 أو 2015 ويتكون من 12 رقمًا',
+      'رقم الهاتف غير صحيح — يجب أن يبدأ بـ 010 أو 011 أو 012 أو 015 ويتكون من 11 رقمًا',
     save: 'حفظ',
     cancel: 'إلغاء',
     phoneExists: 'رقم الهاتف مسجل بالفعل',
@@ -99,6 +117,7 @@ const content = {
     permSaved: 'تم حفظ الصلاحيات',
     savePermissions: 'حفظ الصلاحيات',
     coursesNote: 'ملاحظة: ستُطبق الصلاحيات على جميع كورسات هذا المدرس.',
+    permSaveError: 'فشل حفظ الصلاحيات',
   },
   en: {
     title: 'Teachers',
@@ -131,12 +150,13 @@ const content = {
     passwordLabel: 'Password',
     passwordPlaceholder: '••••••••',
     passwordEditHint: 'Leave blank to keep current password',
+    passwordInvalid: 'Password must be at least 8 characters',
     avatarLabel: 'Teacher Photo (Optional)',
     avatarBtn: 'Choose Photo',
     whatsappLabel: 'WhatsApp Number (Optional)',
     whatsappPlaceholder: '201XXXXXXXXX',
     whatsappInvalid:
-      'Invalid WhatsApp number — must start with 201 followed by 0, 1, 2, or 5, and be 12 digits total',
+      'Invalid phone number — must start with 010, 011, 012, or 015 and be 11 digits',
     save: 'Save',
     cancel: 'Cancel',
     phoneExists: 'Phone number already registered',
@@ -157,10 +177,11 @@ const content = {
     permSaved: 'Permissions saved',
     savePermissions: 'Save Permissions',
     coursesNote: 'Note: Permissions will apply to all courses by this teacher.',
+    permSaveError: 'Failed to save permissions',
   },
 };
 
-const defaultPermissions = {
+const defaultPermissions: TeacherPermissions = {
   canAddVideo: true,
   canAddExam: true,
   canEditContent: true,
@@ -207,7 +228,7 @@ function AvatarCircle({
   );
 }
 
-// ── AvatarPicker - ✅ الإصدار الصحيح ──────────────────────────
+// ── AvatarPicker ──────────────────────────────────────────────
 function AvatarPicker({
   preview,
   file,
@@ -305,6 +326,58 @@ function PhoneField({
   );
 }
 
+// ── PasswordField ─────────────────────────────────────────────
+function PasswordField({
+  value,
+  onChange,
+  placeholder,
+  font,
+  invalidMsg,
+  hint,
+  validate = isValidNewPassword,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  placeholder: string;
+  font: string | undefined;
+  invalidMsg: string;
+  hint?: string;
+  validate?: (v: string) => boolean;
+}) {
+  const dirty = value.length > 0;
+  const valid = validate(value);
+  const showError = dirty && !valid;
+  return (
+    <div className="flex flex-col gap-0.5 sm:gap-1">
+      <input
+        type="password"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        dir="ltr"
+        className={`input-field text-[10px] sm:text-sm transition-all ${showError ? 'border-red-400 focus:ring-red-300' : ''}`}
+      />
+      {showError ? (
+        <span
+          className="text-[8px] sm:text-xs text-red-500 leading-snug"
+          style={{ fontFamily: font }}
+        >
+          {invalidMsg}
+        </span>
+      ) : (
+        hint && (
+          <span
+            className="text-[8px] sm:text-xs text-muted-foreground"
+            style={{ fontFamily: font }}
+          >
+            {hint}
+          </span>
+        )
+      )}
+    </div>
+  );
+}
+
 // ── Main Component ────────────────────────────────────────────
 export default function AdminTeachersPage() {
   const { lang, isRtl, canDelete } = useAdminLang();
@@ -345,7 +418,7 @@ export default function AdminTeachersPage() {
   const [deleteTeacher, setDeleteTeacher] = useState<Teacher | null>(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [permTeacher, setPermTeacher] = useState<Teacher | null>(null);
-  const [permissions, setPermissions] = useState({ ...defaultPermissions });
+  const [permissions, setPermissions] = useState<TeacherPermissions>({ ...defaultPermissions });
   const [permLoading, setPermLoading] = useState(false);
 
   const getBorderDirection = () => (isRtl ? 'border-l border-border' : 'border-r border-border');
@@ -444,6 +517,10 @@ export default function AdminTeachersPage() {
       toast.error(t.phoneInvalid);
       return;
     }
+    if (!isValidNewPassword(addForm.password)) {
+      toast.error(t.passwordInvalid);
+      return;
+    }
     setAddLoading(true);
     const fd = new FormData();
     fd.append('fullName', addForm.fullName);
@@ -471,6 +548,10 @@ export default function AdminTeachersPage() {
       toast.error(t.phoneInvalid);
       return;
     }
+    if (!isValidOptionalPassword(editForm.password)) {
+      toast.error(t.passwordInvalid);
+      return;
+    }
     setEditLoading(true);
     const fd = new FormData();
     fd.append('id', String(editTeacher.id));
@@ -491,12 +572,29 @@ export default function AdminTeachersPage() {
     setEditLoading(false);
   };
 
+  // ✅ NEW: real persistence — calls the updatePermissions action on
+  // /api/admin/teachers instead of faking a delay and toasting success.
   const handleSavePermissions = async () => {
+    if (!permTeacher) return;
     setPermLoading(true);
-    await new Promise((r) => setTimeout(r, 600));
-    toast.success(t.permSaved);
+    try {
+      const res = await fetch('/api/admin/teachers', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: permTeacher.id,
+          action: 'updatePermissions',
+          permissions,
+        }),
+      });
+      if (!res.ok) throw new Error();
+      toast.success(t.permSaved);
+      setPermTeacher(null);
+      fetchTeachers();
+    } catch {
+      toast.error(t.permSaveError);
+    }
     setPermLoading(false);
-    setPermTeacher(null);
   };
 
   return (
@@ -669,8 +767,10 @@ export default function AdminTeachersPage() {
                         </button>
                         <button
                           onClick={() => {
+                            // ✅ Seed the modal from this teacher's real saved
+                            // permissions instead of always the hardcoded default.
                             setPermTeacher(teacher);
-                            setPermissions({ ...defaultPermissions });
+                            setPermissions({ ...teacher.permissions });
                           }}
                           title={t.permissions}
                           className="p-1 sm:p-1.5 rounded-lg text-muted-foreground hover:bg-primary/10 hover:text-primary transition-colors"
@@ -783,17 +883,17 @@ export default function AdminTeachersPage() {
                 font={font}
                 invalidMsg={t.whatsappInvalid}
                 validate={isValidEgyptWhatsapp}
-                maxLen={12}
+                maxLen={11}
               />
             </Field>
             <Field label={t.passwordLabel} font={font}>
-              <input
-                type="password"
+              <PasswordField
                 value={addForm.password}
-                onChange={(e) => setAddForm({ ...addForm, password: e.target.value })}
+                onChange={(v) => setAddForm({ ...addForm, password: v })}
                 placeholder={t.passwordPlaceholder}
-                dir="ltr"
-                className="input-field text-[10px] sm:text-sm"
+                font={font}
+                invalidMsg={t.passwordInvalid}
+                validate={isValidNewPassword}
               />
             </Field>
           </div>
@@ -813,7 +913,8 @@ export default function AdminTeachersPage() {
               disabled={
                 addLoading ||
                 !isValidEgyptPhone(addForm.phone) ||
-                !isValidEgyptWhatsapp(addForm.whatsapp)
+                !isValidEgyptWhatsapp(addForm.whatsapp) ||
+                !isValidNewPassword(addForm.password)
               }
               className="px-3 sm:px-5 py-1 sm:py-2 rounded-xl gradient-primary text-white text-[10px] sm:text-sm font-bold shadow hover:opacity-90 active:scale-95 transition-all disabled:opacity-60"
               style={{ fontFamily: font }}
@@ -893,20 +994,15 @@ export default function AdminTeachersPage() {
               />
             </Field>
             <Field label={t.passwordLabel} font={font}>
-              <input
-                type="password"
+              <PasswordField
                 value={editForm.password}
-                onChange={(e) => setEditForm({ ...editForm, password: e.target.value })}
+                onChange={(v) => setEditForm({ ...editForm, password: v })}
                 placeholder={t.passwordPlaceholder}
-                dir="ltr"
-                className="input-field text-[10px] sm:text-sm"
+                font={font}
+                invalidMsg={t.passwordInvalid}
+                hint={t.passwordEditHint}
+                validate={isValidOptionalPassword}
               />
-              <span
-                className="text-[8px] sm:text-xs text-muted-foreground"
-                style={{ fontFamily: font }}
-              >
-                {t.passwordEditHint}
-              </span>
             </Field>
           </div>
           <div className="flex items-center justify-end gap-2 mt-3 sm:mt-5">
@@ -922,7 +1018,8 @@ export default function AdminTeachersPage() {
               disabled={
                 editLoading ||
                 !isValidEgyptPhone(editForm.phone) ||
-                !isValidEgyptWhatsapp(editForm.whatsapp)
+                !isValidEgyptWhatsapp(editForm.whatsapp) ||
+                !isValidOptionalPassword(editForm.password)
               }
               className="px-3 sm:px-5 py-1 sm:py-2 rounded-xl gradient-primary text-white text-[10px] sm:text-sm font-bold shadow hover:opacity-90 active:scale-95 transition-all disabled:opacity-60"
               style={{ fontFamily: font }}
@@ -955,7 +1052,7 @@ export default function AdminTeachersPage() {
                 { key: 'canEditContent', label: t.permCanEditContent },
                 { key: 'canViewStudents', label: t.permCanViewStudents },
                 { key: 'canReorder', label: t.permCanReorder },
-              ] as { key: keyof typeof defaultPermissions; label: string }[]
+              ] as { key: keyof TeacherPermissions; label: string }[]
             ).map(({ key, label }) => (
               <label
                 key={key}

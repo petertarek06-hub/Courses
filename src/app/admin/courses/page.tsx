@@ -482,7 +482,8 @@ export default function AdminCoursesPage() {
                       className={`px-2 sm:px-4 py-2 sm:py-3 text-center align-middle border-b border-border ${getBorderDirection()} text-muted-foreground`}
                       style={{ fontFamily: font }}
                     >
-                      {course.teacher.fullName}
+                      {/* {course.teacher.fullName} */}
+                      {course.teacher?.fullName}
                     </td>
                     {/* Grade */}
                     <td

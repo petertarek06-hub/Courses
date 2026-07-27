@@ -33,6 +33,11 @@ export async function GET(req: NextRequest) {
   const { error } = await authorize(courseId);
   if (error) return error;
 
+  // Note: intentionally NOT filtering examQuestions by isVisible here.
+  // Admin/teacher management views should still see hidden (soft-removed)
+  // questions so they understand why a question they tried to delete is
+  // still occupying a row — the frontend can use `isVisible` to gray it
+  // out / label it "removed". Students never hit this endpoint.
   const lessons = await prisma.lesson.findMany({
     where: { courseId },
     orderBy: { order: 'asc' },
@@ -271,24 +276,59 @@ export async function PATCH(req: NextRequest) {
     });
     let nextOrder = (maxEq?.order ?? 0) + 1;
 
+    // NOTE: this includes hidden (soft-removed) rows too, so re-adding a
+    // question that was previously hidden is a no-op here rather than a
+    // duplicate — see the "unhide" note below for how to surface that.
     const existing = await prisma.examQuestion.findMany({
       where: { examId: exam.id },
-      select: { questionId: true },
+      select: { questionId: true, isVisible: true },
     });
     const existingIds = new Set(existing.map((e) => e.questionId));
+    const hiddenIds = new Set(existing.filter((e) => !e.isVisible).map((e) => e.questionId));
     const toAdd = questionIds.filter((qId) => !existingIds.has(qId));
+    const toUnhide = questionIds.filter((qId) => hiddenIds.has(qId));
+
+    if (toUnhide.length) {
+      await prisma.examQuestion.updateMany({
+        where: { examId: exam.id, questionId: { in: toUnhide } },
+        data: { isVisible: true },
+      });
+    }
 
     await prisma.examQuestion.createMany({
       data: toAdd.map((qId) => ({ examId: exam.id, questionId: qId, order: nextOrder++ })),
     });
-    return NextResponse.json({ ok: true, added: toAdd.length });
+    return NextResponse.json({ ok: true, added: toAdd.length, unhidden: toUnhide.length });
   }
 
   // ── removeExamQuestion ───────────────────────────────────────
+  // If students have already submitted answers for this question, deleting
+  // the row outright would violate the FK on attempt_answers (and destroy
+  // graded history). So: hard-delete only when it's safe, otherwise hide it.
   if (action === 'removeExamQuestion') {
     const { examQuestionId } = body;
-    await prisma.examQuestion.delete({ where: { id: Number(examQuestionId) } });
-    return NextResponse.json({ ok: true });
+    if (!examQuestionId)
+      return NextResponse.json({ error: 'examQuestionId required' }, { status: 400 });
+
+    const answerCount = await prisma.attemptAnswer.count({
+      where: { examQuestionId: Number(examQuestionId) },
+    });
+
+    if (answerCount === 0) {
+      await prisma.examQuestion.delete({ where: { id: Number(examQuestionId) } });
+      return NextResponse.json({ ok: true, hidden: false });
+    }
+
+    await prisma.examQuestion.update({
+      where: { id: Number(examQuestionId) },
+      data: { isVisible: false },
+    });
+    return NextResponse.json({
+      ok: true,
+      hidden: true,
+      message:
+        'This question has already been answered by students, so it was hidden instead of deleted. Existing grades are unaffected.',
+    });
   }
 
   // ── reorderExamQuestion ──────────────────────────────────────

@@ -5,6 +5,15 @@ import { prisma } from '@/lib/prisma';
 import { writeFile, mkdir, unlink } from 'fs/promises';
 import path from 'path';
 
+const MIN_PASSWORD_LENGTH = 8;
+
+const DEFAULT_PERMISSIONS = {
+  canAddVideo: true,
+  canAddExam: true,
+  canEditContent: true,
+  canViewStudents: false,
+  canReorder: true,
+};
 // ── GET ─────────────────────────────────────────────────────────
 export async function GET() {
   const user = await getAuthUser();
@@ -23,12 +32,29 @@ export async function GET() {
       whatsappNumber: true,
       isActive: true,
       createdAt: true,
+      // ✅ Actual back-relation field name on User is `teacherPermission`
+      // (per the generated Prisma client), not `permissions`.
+      teacherPermission: {
+        select: {
+          canAddVideo: true,
+          canAddExam: true,
+          canEditContent: true,
+          canViewStudents: true,
+          canReorder: true,
+        },
+      },
     },
   });
 
-  return NextResponse.json(teachers);
-}
+  // ✅ Reshape to `permissions` for the frontend's Teacher interface —
+  // defaulting when no row exists yet.
+  const result = teachers.map(({ teacherPermission, ...t }) => ({
+    ...t,
+    permissions: teacherPermission ?? DEFAULT_PERMISSIONS,
+  }));
 
+  return NextResponse.json(result);
+}
 // ── POST ────────────────────────────────────────────────────────
 export async function POST(req: NextRequest) {
   const user = await getAuthUser();
@@ -45,6 +71,12 @@ export async function POST(req: NextRequest) {
 
   if (!fullName || !phone || !password)
     return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
+
+  if (password.length < MIN_PASSWORD_LENGTH)
+    return NextResponse.json(
+      { error: `Password must be at least ${MIN_PASSWORD_LENGTH} characters` },
+      { status: 400 }
+    );
 
   const existing = await prisma.user.findUnique({ where: { phone } });
   if (existing) return NextResponse.json({ error: 'Phone already registered' }, { status: 409 });
@@ -84,9 +116,10 @@ export async function PATCH(req: NextRequest) {
 
   const contentType = req.headers.get('content-type') ?? '';
 
-  // suspend / activate — JSON
+  // suspend / activate / updatePermissions — JSON
   if (contentType.includes('application/json')) {
-    const { id, action } = await req.json();
+    const body = await req.json();
+    const { id, action } = body;
     if (!id || !action)
       return NextResponse.json({ error: 'Missing id or action' }, { status: 400 });
 
@@ -98,6 +131,50 @@ export async function PATCH(req: NextRequest) {
       await prisma.user.update({ where: { id }, data: { isActive: true } });
       return NextResponse.json({ success: true });
     }
+
+    // ✅ NEW: permissions are staff management — same tier as delete,
+    // so this requires the strict admin role, not just hasAdminAccess.
+    if (action === 'updatePermissions') {
+      if (!isAdmin(user.role)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
+      const { permissions } = body;
+      if (!permissions || typeof permissions !== 'object')
+        return NextResponse.json({ error: 'Missing permissions' }, { status: 400 });
+
+      const {
+        canAddVideo = true,
+        canAddExam = true,
+        canEditContent = true,
+        canViewStudents = false,
+        canReorder = true,
+      } = permissions;
+
+      const teacher = await prisma.user.findUnique({ where: { id }, select: { role: true } });
+      if (!teacher || teacher.role !== 'teacher')
+        return NextResponse.json({ error: 'Teacher not found' }, { status: 404 });
+
+      const saved = await prisma.teacherPermission.upsert({
+        where: { teacherId: id },
+        create: {
+          teacherId: id,
+          canAddVideo: !!canAddVideo,
+          canAddExam: !!canAddExam,
+          canEditContent: !!canEditContent,
+          canViewStudents: !!canViewStudents,
+          canReorder: !!canReorder,
+        },
+        update: {
+          canAddVideo: !!canAddVideo,
+          canAddExam: !!canAddExam,
+          canEditContent: !!canEditContent,
+          canViewStudents: !!canViewStudents,
+          canReorder: !!canReorder,
+        },
+      });
+
+      return NextResponse.json({ success: true, permissions: saved });
+    }
+
     return NextResponse.json({ error: 'Unknown action' }, { status: 400 });
   }
 
@@ -113,6 +190,12 @@ export async function PATCH(req: NextRequest) {
 
   if (!id || !fullName || !phone)
     return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
+
+  if (password && password.length < MIN_PASSWORD_LENGTH)
+    return NextResponse.json(
+      { error: `Password must be at least ${MIN_PASSWORD_LENGTH} characters` },
+      { status: 400 }
+    );
 
   const conflict = await prisma.user.findFirst({ where: { phone, NOT: { id } } });
   if (conflict) return NextResponse.json({ error: 'Phone already registered' }, { status: 409 });

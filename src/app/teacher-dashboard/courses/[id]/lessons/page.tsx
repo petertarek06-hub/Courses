@@ -30,6 +30,7 @@ import {
   CalendarCheck2,
   CalendarX2,
   ListOrdered,
+  Lock,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useLang } from '@/lib/uselang';
@@ -46,6 +47,7 @@ interface ExamQuestion {
   id: number;
   order: number;
   mark: number;
+  isVisible: boolean; // false = soft-hidden because students already answered it
   question: QuestionBank;
 }
 interface ExamRecord {
@@ -73,6 +75,23 @@ interface QuestionBank {
   lessonTag: string;
   courseId: number;
 }
+
+// ✅ NEW: what a teacher is allowed to do in this course, fetched once
+// from /api/teacher/permissions and passed down to every tab.
+interface TeacherPermissions {
+  canAddVideo: boolean;
+  canAddExam: boolean;
+  canEditContent: boolean;
+  canViewStudents: boolean;
+  canReorder: boolean;
+}
+const DEFAULT_PERMS: TeacherPermissions = {
+  canAddVideo: true,
+  canAddExam: true,
+  canEditContent: true,
+  canViewStudents: false,
+  canReorder: true,
+};
 
 type ActiveTab = 'videos' | 'questions' | 'exams' | 'layout';
 
@@ -148,6 +167,12 @@ const T = {
     totalMarks: 'إجمالي الدرجات',
     markUnit: 'درجة',
     markLabel: 'الدرجة',
+    // ── Hidden exam questions ──
+    hiddenQuestionBadge: 'مخفي',
+    hiddenQuestionHint:
+      'تمت إجابة الطلاب على هذا السؤال، فتم إخفاؤه بدلاً من حذفه للحفاظ على درجاتهم',
+    questionHiddenToast: 'لا يمكن حذف هذا السؤال لأن طلابًا أجابوا عليه، فتم إخفاؤه بدلاً من ذلك',
+    unhideOnReadd: 'إعادة إضافته من البنك ستُظهره للطلاب مجددًا',
     // Shared
     save: 'حفظ',
     cancel: 'إلغاء',
@@ -175,6 +200,8 @@ const T = {
     layoutScheduledHint: 'مستقلة عن التسلسل — لا تُقفل ولا تُفتح أي عنصر آخر',
     noLessonsInSequence: 'لا توجد عناصر في التسلسل بعد',
     noScheduledExams: 'لا توجد امتحانات مجدولة',
+    // ✅ NEW: permission-gating copy
+    noPermission: 'لا تملك صلاحية للقيام بهذا الإجراء',
   },
   en: {
     back: 'Back to Dashboard',
@@ -245,6 +272,13 @@ const T = {
     totalMarks: 'Total marks',
     markUnit: 'pts',
     markLabel: 'Mark',
+    // ── Hidden exam questions ──
+    hiddenQuestionBadge: 'Hidden',
+    hiddenQuestionHint:
+      'Students already answered this question, so it was hidden instead of deleted to preserve their grades',
+    questionHiddenToast:
+      "Can't delete — students already answered this question, so it was hidden instead",
+    unhideOnReadd: 'Re-adding it from the bank will make it visible to students again',
     save: 'Save',
     cancel: 'Cancel',
     delete: 'Delete',
@@ -273,6 +307,8 @@ const T = {
       "Independent of the sequence — these don't gate or get gated by anything else",
     noLessonsInSequence: 'No items in the sequence yet',
     noScheduledExams: 'No scheduled exams',
+    // ✅ NEW
+    noPermission: "You don't have permission to do this",
   },
 };
 
@@ -568,6 +604,16 @@ export default function CourseLessonsPage({ params }: { params: Promise<{ id: st
   const [loadingLessons, setLoadingLessons] = useState(true);
   const [loadingQuestions, setLoadingQuestions] = useState(true);
 
+  // ✅ NEW: this teacher's permissions, fetched once and passed to every tab
+  const [permissions, setPermissions] = useState<TeacherPermissions>(DEFAULT_PERMS);
+
+  useEffect(() => {
+    fetch('/api/teacher/permissions')
+      .then((r) => (r.ok ? r.json() : DEFAULT_PERMS))
+      .then(setPermissions)
+      .catch(() => setPermissions(DEFAULT_PERMS));
+  }, []);
+
   // ── Fetch ────────────────────────────────────────────────────
   const fetchLessons = useCallback(() => {
     setLoadingLessons(true);
@@ -676,6 +722,7 @@ export default function CourseLessonsPage({ params }: { params: Promise<{ id: st
             lang={lang}
             t={t}
             font={font}
+            permissions={permissions}
           />
         )}
         {activeTab === 'questions' && (
@@ -688,6 +735,7 @@ export default function CourseLessonsPage({ params }: { params: Promise<{ id: st
             t={t}
             font={font}
             allTags={allTags}
+            permissions={permissions}
           />
         )}
         {activeTab === 'exams' && (
@@ -701,6 +749,7 @@ export default function CourseLessonsPage({ params }: { params: Promise<{ id: st
             t={t}
             font={font}
             allTags={allTags}
+            permissions={permissions}
           />
         )}
         {activeTab === 'layout' && (
@@ -712,6 +761,7 @@ export default function CourseLessonsPage({ params }: { params: Promise<{ id: st
             lang={lang}
             t={t}
             font={font}
+            permissions={permissions}
           />
         )}
       </main>
@@ -732,6 +782,7 @@ function VideosTab({
   lang,
   t,
   font,
+  permissions,
 }: {
   courseId: number;
   lessons: Lesson[];
@@ -740,6 +791,7 @@ function VideosTab({
   lang: 'ar' | 'en';
   t: TType;
   font?: string;
+  permissions: TeacherPermissions;
 }) {
   const [showModal, setShowModal] = useState(false);
   const [editLesson, setEditLesson] = useState<Lesson | null>(null);
@@ -751,11 +803,19 @@ function VideosTab({
   const f = (k: string, v: string) => setForm((p) => ({ ...p, [k]: v }));
 
   const openAdd = () => {
+    if (!permissions.canAddVideo) {
+      toast.error(t.noPermission);
+      return;
+    }
     setEditLesson(null);
     setForm({ title: '', vimeoId: '', description: '' });
     setShowModal(true);
   };
   const openEdit = (l: Lesson) => {
+    if (!permissions.canEditContent) {
+      toast.error(t.noPermission);
+      return;
+    }
     setEditLesson(l);
     setForm({
       title: l.title,
@@ -812,6 +872,10 @@ function VideosTab({
   };
 
   const toggleVis = async (l: Lesson) => {
+    if (!permissions.canEditContent) {
+      toast.error(t.noPermission);
+      return;
+    }
     await fetch('/api/admin/lessons', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
@@ -832,10 +896,12 @@ function VideosTab({
           </h2>
           <button
             onClick={openAdd}
-            className="flex items-center gap-2 px-3 py-2 rounded-xl gradient-primary text-white text-xs font-bold shadow hover:opacity-90 active:scale-95 transition-all"
+            disabled={!permissions.canAddVideo}
+            title={!permissions.canAddVideo ? t.noPermission : undefined}
+            className="flex items-center gap-2 px-3 py-2 rounded-xl gradient-primary text-white text-xs font-bold shadow hover:opacity-90 active:scale-95 transition-all disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:opacity-40"
             style={{ fontFamily: font }}
           >
-            <Plus size={14} /> {t.addVideo}
+            {permissions.canAddVideo ? <Plus size={14} /> : <Lock size={14} />} {t.addVideo}
           </button>
         </div>
 
@@ -909,26 +975,28 @@ function VideosTab({
                     </>
                   )}
                 </span>
-                <div className="flex items-center gap-1 flex-shrink-0">
-                  <button
-                    onClick={() => openEdit(lesson)}
-                    className="p-1.5 rounded-lg text-muted-foreground hover:bg-primary/10 hover:text-primary transition-colors"
-                  >
-                    <Pencil size={14} />
-                  </button>
-                  <button
-                    onClick={() => toggleVis(lesson)}
-                    className="p-1.5 rounded-lg text-muted-foreground hover:bg-orange-50 hover:text-orange-500 transition-colors"
-                  >
-                    {lesson.isVisible ? <EyeOff size={14} /> : <Eye size={14} />}
-                  </button>
-                  <button
-                    onClick={() => setDeleteTarget(lesson)}
-                    className="p-1.5 rounded-lg text-muted-foreground hover:bg-red-50 hover:text-red-500 transition-colors"
-                  >
-                    <Trash2 size={14} />
-                  </button>
-                </div>
+                {permissions.canEditContent && (
+                  <div className="flex items-center gap-1 flex-shrink-0">
+                    <button
+                      onClick={() => openEdit(lesson)}
+                      className="p-1.5 rounded-lg text-muted-foreground hover:bg-primary/10 hover:text-primary transition-colors"
+                    >
+                      <Pencil size={14} />
+                    </button>
+                    <button
+                      onClick={() => toggleVis(lesson)}
+                      className="p-1.5 rounded-lg text-muted-foreground hover:bg-orange-50 hover:text-orange-500 transition-colors"
+                    >
+                      {lesson.isVisible ? <EyeOff size={14} /> : <Eye size={14} />}
+                    </button>
+                    <button
+                      onClick={() => setDeleteTarget(lesson)}
+                      className="p-1.5 rounded-lg text-muted-foreground hover:bg-red-50 hover:text-red-500 transition-colors"
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
+                )}
               </div>
             ))}
           </div>
@@ -1038,6 +1106,7 @@ function QuestionsTab({
   t,
   font,
   allTags,
+  permissions,
 }: {
   courseId: number;
   questions: QuestionBank[];
@@ -1047,6 +1116,7 @@ function QuestionsTab({
   t: TType;
   font?: string;
   allTags: string[];
+  permissions: TeacherPermissions;
 }) {
   const isRtl = lang === 'ar';
   const [showModal, setShowModal] = useState(false);
@@ -1060,13 +1130,23 @@ function QuestionsTab({
 
   const f = (k: keyof QForm, v: unknown) => setForm((p) => ({ ...p, [k]: v }));
 
+  // ✅ NEW: question bank entries are course content — gated on canEditContent,
+  // same as videos/exam metadata.
   const openAdd = () => {
+    if (!permissions.canEditContent) {
+      toast.error(t.noPermission);
+      return;
+    }
     setEditQ(null);
     setForm(emptyQForm());
     setShowModal(true);
   };
 
   const openEdit = (q: QuestionBank) => {
+    if (!permissions.canEditContent) {
+      toast.error(t.noPermission);
+      return;
+    }
     setEditQ(q);
     const isEssay = q.type === 'essay';
     setForm({
@@ -1168,10 +1248,12 @@ function QuestionsTab({
           </h2>
           <button
             onClick={openAdd}
-            className="flex items-center gap-2 px-3 py-2 rounded-xl gradient-primary text-white text-xs font-bold shadow hover:opacity-90 active:scale-95 transition-all"
+            disabled={!permissions.canEditContent}
+            title={!permissions.canEditContent ? t.noPermission : undefined}
+            className="flex items-center gap-2 px-3 py-2 rounded-xl gradient-primary text-white text-xs font-bold shadow hover:opacity-90 active:scale-95 transition-all disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:opacity-40"
             style={{ fontFamily: font }}
           >
-            <Plus size={14} /> {t.addQuestion}
+            {permissions.canEditContent ? <Plus size={14} /> : <Lock size={14} />} {t.addQuestion}
           </button>
         </div>
 
@@ -1288,20 +1370,22 @@ function QuestionsTab({
                         </div>
                       )}
                     </div>
-                    <div className="flex items-center gap-1 flex-shrink-0">
-                      <button
-                        onClick={() => openEdit(q)}
-                        className="p-1.5 rounded-lg text-muted-foreground hover:bg-primary/10 hover:text-primary transition-colors"
-                      >
-                        <Pencil size={14} />
-                      </button>
-                      <button
-                        onClick={() => setDeleteTarget(q)}
-                        className="p-1.5 rounded-lg text-muted-foreground hover:bg-red-50 hover:text-red-500 transition-colors"
-                      >
-                        <Trash2 size={14} />
-                      </button>
-                    </div>
+                    {permissions.canEditContent && (
+                      <div className="flex items-center gap-1 flex-shrink-0">
+                        <button
+                          onClick={() => openEdit(q)}
+                          className="p-1.5 rounded-lg text-muted-foreground hover:bg-primary/10 hover:text-primary transition-colors"
+                        >
+                          <Pencil size={14} />
+                        </button>
+                        <button
+                          onClick={() => setDeleteTarget(q)}
+                          className="p-1.5 rounded-lg text-muted-foreground hover:bg-red-50 hover:text-red-500 transition-colors"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    )}
                   </div>
                 </div>
               );
@@ -1538,6 +1622,7 @@ function ExamsTab({
   t,
   font,
   allTags,
+  permissions,
 }: {
   courseId: number;
   lessons: Lesson[];
@@ -1548,6 +1633,7 @@ function ExamsTab({
   t: TType;
   font?: string;
   allTags: string[];
+  permissions: TeacherPermissions;
 }) {
   const isRtl = lang === 'ar';
   const [showModal, setShowModal] = useState(false);
@@ -1565,12 +1651,20 @@ function ExamsTab({
   const f = (k: string, v: string) => setForm((p) => ({ ...p, [k]: v }));
 
   const openAdd = () => {
+    if (!permissions.canAddExam) {
+      toast.error(t.noPermission);
+      return;
+    }
     setEditLesson(null);
     setForm({ title: '', durationMinutes: '', passingScore: '50' });
     setScheduledValue(null);
     setShowModal(true);
   };
   const openEdit = (l: Lesson) => {
+    if (!permissions.canEditContent) {
+      toast.error(t.noPermission);
+      return;
+    }
     setEditLesson(l);
     setForm({
       title: l.title,
@@ -1627,6 +1721,10 @@ function ExamsTab({
   };
 
   const toggleVis = async (l: Lesson) => {
+    if (!permissions.canEditContent) {
+      toast.error(t.noPermission);
+      return;
+    }
     await fetch('/api/admin/lessons', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
@@ -1647,6 +1745,10 @@ function ExamsTab({
   };
 
   const openManage = (l: Lesson) => {
+    if (!permissions.canEditContent) {
+      toast.error(t.noPermission);
+      return;
+    }
     setManageLesson(l);
     setSelectedBankIds(new Set());
     setBankFilter('');
@@ -1671,14 +1773,24 @@ function ExamsTab({
     toast.success(t.addedOk);
   };
 
+  // ✅ NEW: the API now hard-deletes a question with no student answers, but
+  // soft-hides (isVisible: false) one that already has answers — because
+  // hard-deleting it would violate the FK on attempt_answers and destroy
+  // grading history. Read `hidden` from the response and toast accordingly
+  // instead of always claiming it was deleted.
   const handleRemoveEQ = async (lessonId: number, eqId: number) => {
-    await fetch('/api/admin/lessons', {
+    const res = await fetch('/api/admin/lessons', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ id: lessonId, action: 'removeExamQuestion', examQuestionId: eqId }),
     });
+    const data = await res.json().catch(() => null);
     onRefresh();
-    toast.success(t.deletedOk);
+    if (data?.hidden) {
+      toast.warning(t.questionHiddenToast);
+    } else {
+      toast.success(t.deletedOk);
+    }
   };
 
   const handleReorderEQ = async (lessonId: number, eqId: number, dir: 'up' | 'down') => {
@@ -1713,9 +1825,21 @@ function ExamsTab({
     ? (lessons.find((l) => l.id === manageLesson.id) ?? null)
     : null;
 
+  // ✅ NEW: hidden questions no longer count toward the "questions in this
+  // exam" / total-marks figures shown to the admin — they're not part of
+  // the live exam anymore, just kept around (grayed out, below) so grading
+  // history stays intelligible.
+  const visibleExamQuestions =
+    currentManage?.exam?.examQuestions.filter((eq) => eq.isVisible) ?? [];
+  const hiddenExamQuestions =
+    currentManage?.exam?.examQuestions.filter((eq) => !eq.isVisible) ?? [];
+
+  // ✅ NEW: a question already in the exam but hidden should still show up
+  // in the "add from bank" picker — selecting it calls addExamQuestions,
+  // which un-hides it on the backend (see route.ts).
   const filteredBank = questions.filter((q) => {
-    const inExam = currentManage?.exam?.examQuestions.some((eq) => eq.question.id === q.id);
-    return !inExam && (!bankFilter || q.lessonTag === bankFilter);
+    const inVisibleExam = visibleExamQuestions.some((eq) => eq.question.id === q.id);
+    return !inVisibleExam && (!bankFilter || q.lessonTag === bankFilter);
   });
 
   const minDatetimeLocal = toDatetimeLocal(new Date());
@@ -1732,10 +1856,12 @@ function ExamsTab({
           </h2>
           <button
             onClick={openAdd}
-            className="flex items-center gap-2 px-3 py-2 rounded-xl gradient-primary text-white text-xs font-bold shadow hover:opacity-90 active:scale-95 transition-all"
+            disabled={!permissions.canAddExam}
+            title={!permissions.canAddExam ? t.noPermission : undefined}
+            className="flex items-center gap-2 px-3 py-2 rounded-xl gradient-primary text-white text-xs font-bold shadow hover:opacity-90 active:scale-95 transition-all disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:opacity-40"
             style={{ fontFamily: font }}
           >
-            <Plus size={14} /> {t.addExam}
+            {permissions.canAddExam ? <Plus size={14} /> : <Lock size={14} />} {t.addExam}
           </button>
         </div>
 
@@ -1783,7 +1909,8 @@ function ExamsTab({
                     </span>
                     <span className="text-xs text-muted-foreground flex items-center gap-1">
                       <HelpCircle size={11} />
-                      {lesson.exam?.examQuestions.length ?? 0} {t.questions}
+                      {lesson.exam?.examQuestions.filter((eq) => eq.isVisible).length ?? 0}{' '}
+                      {t.questions}
                     </span>
                   </div>
                 </div>
@@ -1812,29 +1939,34 @@ function ExamsTab({
                 <div className="flex items-center gap-1 flex-shrink-0">
                   <button
                     onClick={() => openManage(lesson)}
-                    title={t.manageQuestions}
-                    className="p-1.5 rounded-lg text-muted-foreground hover:bg-secondary/10 hover:text-secondary transition-colors"
+                    title={permissions.canEditContent ? t.manageQuestions : t.noPermission}
+                    disabled={!permissions.canEditContent}
+                    className="p-1.5 rounded-lg text-muted-foreground hover:bg-secondary/10 hover:text-secondary transition-colors disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-muted-foreground"
                   >
                     <HelpCircle size={14} />
                   </button>
-                  <button
-                    onClick={() => openEdit(lesson)}
-                    className="p-1.5 rounded-lg text-muted-foreground hover:bg-primary/10 hover:text-primary transition-colors"
-                  >
-                    <Pencil size={14} />
-                  </button>
-                  <button
-                    onClick={() => toggleVis(lesson)}
-                    className="p-1.5 rounded-lg text-muted-foreground hover:bg-orange-50 hover:text-orange-500 transition-colors"
-                  >
-                    {lesson.isVisible ? <EyeOff size={14} /> : <Eye size={14} />}
-                  </button>
-                  <button
-                    onClick={() => setDeleteTarget(lesson)}
-                    className="p-1.5 rounded-lg text-muted-foreground hover:bg-red-50 hover:text-red-500 transition-colors"
-                  >
-                    <Trash2 size={14} />
-                  </button>
+                  {permissions.canEditContent && (
+                    <>
+                      <button
+                        onClick={() => openEdit(lesson)}
+                        className="p-1.5 rounded-lg text-muted-foreground hover:bg-primary/10 hover:text-primary transition-colors"
+                      >
+                        <Pencil size={14} />
+                      </button>
+                      <button
+                        onClick={() => toggleVis(lesson)}
+                        className="p-1.5 rounded-lg text-muted-foreground hover:bg-orange-50 hover:text-orange-500 transition-colors"
+                      >
+                        {lesson.isVisible ? <EyeOff size={14} /> : <Eye size={14} />}
+                      </button>
+                      <button
+                        onClick={() => setDeleteTarget(lesson)}
+                        className="p-1.5 rounded-lg text-muted-foreground hover:bg-red-50 hover:text-red-500 transition-colors"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </>
+                  )}
                 </div>
               </div>
             ))}
@@ -1992,18 +2124,17 @@ function ExamsTab({
                 style={{ fontFamily: font }}
               >
                 <ClipboardList size={14} className="text-accent" />
-                {t.examHasQuestions} ({currentManage.exam?.examQuestions.length ?? 0})
-                {!!currentManage.exam?.examQuestions.length && (
+                {t.examHasQuestions} ({visibleExamQuestions.length})
+                {!!visibleExamQuestions.length && (
                   <span
                     className="text-xs px-2 py-0.5 rounded-full bg-accent/10 text-accent font-bold"
                     style={{ fontFamily: font }}
                   >
-                    {t.totalMarks}:{' '}
-                    {currentManage.exam!.examQuestions.reduce((sum, eq) => sum + eq.mark, 0)}
+                    {t.totalMarks}: {visibleExamQuestions.reduce((sum, eq) => sum + eq.mark, 0)}
                   </span>
                 )}
               </h3>
-              {!currentManage.exam?.examQuestions.length ? (
+              {!visibleExamQuestions.length ? (
                 <div className="rounded-xl border border-dashed border-border py-6 text-center">
                   <AlertCircle size={24} className="text-muted-foreground/30 mx-auto mb-2" />
                   <p className="text-xs text-muted-foreground" style={{ fontFamily: font }}>
@@ -2012,7 +2143,7 @@ function ExamsTab({
                 </div>
               ) : (
                 <div className="rounded-xl border border-border overflow-hidden divide-y divide-border">
-                  {currentManage.exam!.examQuestions.map((eq, idx) => (
+                  {visibleExamQuestions.map((eq, idx) => (
                     <div
                       key={eq.id}
                       className="flex items-center gap-3 px-4 py-3 bg-card hover:bg-muted/10 transition-colors"
@@ -2027,7 +2158,7 @@ function ExamsTab({
                         </button>
                         <button
                           onClick={() => handleReorderEQ(currentManage.id, eq.id, 'down')}
-                          disabled={idx === currentManage.exam!.examQuestions.length - 1}
+                          disabled={idx === visibleExamQuestions.length - 1}
                           className="p-0.5 text-muted-foreground hover:text-foreground disabled:opacity-20"
                         >
                           <ChevronDown size={12} />
@@ -2089,6 +2220,43 @@ function ExamsTab({
                   ))}
                 </div>
               )}
+
+              {/* ✅ NEW: hidden questions — kept for grading history, grayed
+                  out, not reorderable/editable/removable-again. Re-selecting
+                  the same question in "Add from bank" below un-hides it. */}
+              {hiddenExamQuestions.length > 0 && (
+                <div className="mt-3 rounded-xl border border-dashed border-border overflow-hidden divide-y divide-border opacity-60">
+                  {hiddenExamQuestions.map((eq) => (
+                    <div
+                      key={eq.id}
+                      className="flex items-center gap-3 px-4 py-3 bg-muted/20"
+                      title={t.hiddenQuestionHint}
+                    >
+                      <EyeOff size={13} className="text-muted-foreground flex-shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        <p
+                          className="text-xs font-semibold text-foreground truncate line-through"
+                          style={{ fontFamily: font }}
+                        >
+                          {eq.question.text}
+                        </p>
+                        <span
+                          className="text-xs text-muted-foreground"
+                          style={{ fontFamily: font }}
+                        >
+                          {t.hiddenQuestionHint}
+                        </span>
+                      </div>
+                      <span
+                        className="text-xs px-2 py-0.5 rounded-full bg-muted text-muted-foreground font-bold flex-shrink-0"
+                        style={{ fontFamily: font }}
+                      >
+                        {t.hiddenQuestionBadge}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
             <div>
@@ -2141,6 +2309,7 @@ function ExamsTab({
                 <div className="rounded-xl border border-border overflow-hidden divide-y divide-border max-h-60 overflow-y-auto">
                   {filteredBank.map((q) => {
                     const selected = selectedBankIds.has(q.id);
+                    const wasHidden = hiddenExamQuestions.some((eq) => eq.question.id === q.id);
                     return (
                       <button
                         key={q.id}
@@ -2152,6 +2321,7 @@ function ExamsTab({
                           });
                         }}
                         className={`w-full flex items-center gap-3 px-4 py-3 text-left transition-colors ${selected ? 'bg-primary/5' : 'hover:bg-muted/20'}`}
+                        title={wasHidden ? t.unhideOnReadd : undefined}
                       >
                         <div
                           className={`w-4 h-4 rounded border-2 flex-shrink-0 flex items-center justify-center transition-all ${selected ? 'border-primary bg-primary' : 'border-border'}`}
@@ -2167,6 +2337,14 @@ function ExamsTab({
                           </p>
                           <span className="text-xs text-muted-foreground">{q.lessonTag}</span>
                         </div>
+                        {wasHidden && (
+                          <span
+                            className="text-xs px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 font-bold flex-shrink-0"
+                            style={{ fontFamily: font }}
+                          >
+                            {t.hiddenQuestionBadge}
+                          </span>
+                        )}
                         <QTypeBadge type={q.type} t={t} font={font} />
                       </button>
                     );
@@ -2203,6 +2381,7 @@ function LayoutTab({
   lang,
   t,
   font,
+  permissions,
 }: {
   courseId: number;
   lessons: Lesson[];
@@ -2211,8 +2390,13 @@ function LayoutTab({
   lang: 'ar' | 'en';
   t: TType;
   font?: string;
+  permissions: TeacherPermissions;
 }) {
   const reorder = async (l: Lesson, dir: 'up' | 'down') => {
+    if (!permissions.canReorder) {
+      toast.error(t.noPermission);
+      return;
+    }
     await fetch('/api/admin/lessons', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
@@ -2236,14 +2420,16 @@ function LayoutTab({
         <div className="flex flex-col gap-0.5 flex-shrink-0">
           <button
             onClick={() => reorder(lesson, 'up')}
-            disabled={idx === 0}
+            disabled={idx === 0 || !permissions.canReorder}
+            title={!permissions.canReorder ? t.noPermission : undefined}
             className="p-0.5 rounded text-muted-foreground hover:text-foreground disabled:opacity-20"
           >
             <ChevronUp size={14} />
           </button>
           <button
             onClick={() => reorder(lesson, 'down')}
-            disabled={idx === list.length - 1}
+            disabled={idx === list.length - 1 || !permissions.canReorder}
+            title={!permissions.canReorder ? t.noPermission : undefined}
             className="p-0.5 rounded text-muted-foreground hover:text-foreground disabled:opacity-20"
           >
             <ChevronDown size={14} />

@@ -129,8 +129,11 @@ export async function GET() {
   const now = new Date();
 
   const enrichedEnrollments = enrollments.map((e) => {
-    const totalLessons = e.course.lessons.length;
-    const completedLessons = e.course.lessons.filter((l) => completedLessonIds.has(l.id)).length;
+    // Progress is based solely on video lessons — exams don't count
+    // toward (or against) the completion percentage.
+    const videoLessons = e.course.lessons.filter((l) => l.type === 'video');
+    const totalLessons = videoLessons.length;
+    const completedLessons = videoLessons.filter((l) => completedLessonIds.has(l.id)).length;
     const progress = totalLessons > 0 ? Math.round((completedLessons / totalLessons) * 100) : 0;
 
     // Earliest upcoming scheduled exam for this course, if any

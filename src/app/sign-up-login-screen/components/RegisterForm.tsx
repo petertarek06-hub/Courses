@@ -2,7 +2,18 @@
 'use client';
 import React, { useState, useRef } from 'react';
 import { useForm } from 'react-hook-form';
-import { Eye, EyeOff, Loader2, User, Phone, Mail, GraduationCap, Camera, X } from 'lucide-react';
+import {
+  Eye,
+  EyeOff,
+  Loader2,
+  User,
+  Phone,
+  Mail,
+  GraduationCap,
+  Camera,
+  X,
+  Users,
+} from 'lucide-react';
 import { notifySuccess, notifyError } from '@/lib/notify';
 
 interface Props {
@@ -17,6 +28,10 @@ interface RegisterData {
   academicYear: string;
   password: string;
   confirmPassword: string;
+  guardianFullName?: string;
+  guardianPhone?: string;
+  guardianPassword?: string;
+  guardianConfirmPassword?: string;
 }
 
 const academicYears = [
@@ -74,6 +89,25 @@ const content = {
     confirmRequired: 'تأكيد كلمة المرور مطلوب',
     confirmMatch: 'كلمتا المرور غير متطابقتين',
     terms: 'بالتسجيل، أوافق على شروط الاستخدام وسياسة الخصوصية',
+    // ── Guardian ──
+    guardianSectionTitle: 'حساب ولي الأمر',
+    guardianToggleLabel: 'إضافة حساب ولي أمر لمتابعة أدائك الدراسي',
+    guardianNameLabel: 'اسم ولي الأمر',
+    guardianNamePlaceholder: 'أدخل اسم ولي الأمر',
+    guardianPhoneLabel: 'رقم هاتف ولي الأمر',
+    guardianPhonePlaceholder: '01xxxxxxxxx',
+    guardianPasswordLabel: 'كلمة مرور ولي الأمر',
+    guardianPasswordPlaceholder: 'أنشئ كلمة مرور لولي الأمر',
+    guardianConfirmLabel: 'تأكيد كلمة مرور ولي الأمر',
+    guardianConfirmPlaceholder: 'أعد إدخال كلمة المرور',
+    guardianNameRequired: 'اسم ولي الأمر مطلوب',
+    guardianPhoneRequired: 'رقم هاتف ولي الأمر مطلوب',
+    guardianPhonePattern: 'أدخل رقم هاتف مصري صحيح لولي الأمر',
+    guardianPhoneSameAsStudent: 'رقم هاتف ولي الأمر يجب أن يختلف عن رقم هاتفك',
+    guardianPasswordRequired: 'كلمة مرور ولي الأمر مطلوبة',
+    guardianPasswordMin: 'كلمة المرور يجب أن تكون 8 أحرف على الأقل',
+    guardianConfirmRequired: 'تأكيد كلمة المرور مطلوب',
+    guardianConfirmMatch: 'كلمتا مرور ولي الأمر غير متطابقتين',
   },
   en: {
     avatarLabel: 'Profile Picture',
@@ -111,6 +145,25 @@ const content = {
     confirmRequired: 'Password confirmation is required',
     confirmMatch: 'Passwords do not match',
     terms: 'By registering, I agree to the Terms of Service and Privacy Policy',
+    // ── Guardian ──
+    guardianSectionTitle: 'Guardian Account',
+    guardianToggleLabel: 'Add a guardian account to follow your academic progress',
+    guardianNameLabel: "Guardian's Full Name",
+    guardianNamePlaceholder: "Enter guardian's full name",
+    guardianPhoneLabel: "Guardian's Phone Number",
+    guardianPhonePlaceholder: '01xxxxxxxxx',
+    guardianPasswordLabel: "Guardian's Password",
+    guardianPasswordPlaceholder: 'Create a password for the guardian',
+    guardianConfirmLabel: "Confirm Guardian's Password",
+    guardianConfirmPlaceholder: 'Re-enter the password',
+    guardianNameRequired: "Guardian's full name is required",
+    guardianPhoneRequired: "Guardian's phone number is required",
+    guardianPhonePattern: 'Enter a valid Egyptian phone number for the guardian',
+    guardianPhoneSameAsStudent: "Guardian's phone must be different from your own",
+    guardianPasswordRequired: "Guardian's password is required",
+    guardianPasswordMin: 'Password must be at least 8 characters',
+    guardianConfirmRequired: 'Password confirmation is required',
+    guardianConfirmMatch: "Guardian's passwords do not match",
   },
 };
 
@@ -124,6 +177,11 @@ export default function RegisterForm({ lang, onSwitchToLogin }: Props) {
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // ── Guardian state ────────────────────────────────────────────
+  const [includeGuardian, setIncludeGuardian] = useState(false);
+  const [showGuardianPassword, setShowGuardianPassword] = useState(false);
+  const [showGuardianConfirm, setShowGuardianConfirm] = useState(false);
+
   const t = content[lang];
   const isRtl = lang === 'ar';
 
@@ -135,6 +193,8 @@ export default function RegisterForm({ lang, onSwitchToLogin }: Props) {
   } = useForm<RegisterData>();
 
   const password = watch('password');
+  const guardianPassword = watch('guardianPassword');
+  const studentPhone = watch('phone');
 
   // ── Avatar handlers ───────────────────────────────────────────
   const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -176,6 +236,12 @@ export default function RegisterForm({ lang, onSwitchToLogin }: Props) {
       formData.append('password', data.password);
       formData.append('academicYear', data.academicYear);
       if (avatarFile) formData.append('avatar', avatarFile);
+
+      if (includeGuardian) {
+        formData.append('guardianFullName', data.guardianFullName || '');
+        formData.append('guardianPhone', data.guardianPhone || '');
+        formData.append('guardianPassword', data.guardianPassword || '');
+      }
 
       const res = await fetch('/api/auth/register', {
         method: 'POST',
@@ -500,6 +566,196 @@ export default function RegisterForm({ lang, onSwitchToLogin }: Props) {
           >
             {errors.confirmPassword.message}
           </p>
+        )}
+      </div>
+
+      {/* ── Guardian Section ───────────────────────────────────── */}
+      <div className="flex flex-col gap-3 rounded-xl border border-border p-4">
+        <button
+          type="button"
+          onClick={() => setIncludeGuardian(!includeGuardian)}
+          className="flex items-center justify-between gap-3 text-start"
+        >
+          <span className="flex items-center gap-2">
+            <Users size={16} className="text-primary shrink-0" />
+            <span
+              className="text-sm font-semibold text-foreground"
+              style={{ fontFamily: isRtl ? 'var(--font-cairo)' : undefined }}
+            >
+              {t.guardianToggleLabel}
+            </span>
+          </span>
+          <span
+            className={`relative shrink-0 w-10 h-6 rounded-full transition-colors duration-200 ${
+              includeGuardian ? 'bg-primary' : 'bg-muted'
+            }`}
+          >
+            <span
+              className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform duration-200 ${
+                isRtl
+                  ? includeGuardian
+                    ? 'right-0.5'
+                    : 'right-4'
+                  : includeGuardian
+                    ? 'left-4'
+                    : 'left-0.5'
+              }`}
+            />
+          </span>
+        </button>
+
+        {includeGuardian && (
+          <div className="flex flex-col gap-4 pt-1">
+            {/* Guardian Name */}
+            <div className="flex flex-col gap-1.5">
+              <label
+                className="text-sm font-semibold text-foreground"
+                style={{ fontFamily: isRtl ? 'var(--font-cairo)' : undefined }}
+              >
+                {t.guardianNameLabel}
+              </label>
+              <div className="relative">
+                <span className="absolute inset-y-0 start-3 flex items-center pointer-events-none">
+                  <User size={15} className="text-muted-foreground" />
+                </span>
+                <input
+                  {...register('guardianFullName', {
+                    required: t.guardianNameRequired,
+                    minLength: { value: 3, message: t.nameMin },
+                  })}
+                  type="text"
+                  placeholder={t.guardianNamePlaceholder}
+                  className={`w-full ps-9 pe-4 py-2.5 rounded-xl border text-sm font-medium bg-background text-foreground placeholder:text-muted-foreground outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary transition-all duration-150 ${
+                    errors.guardianFullName ? 'border-red-400' : 'border-border'
+                  }`}
+                />
+              </div>
+              {errors.guardianFullName && (
+                <p
+                  className="text-red-500 text-xs"
+                  style={{ fontFamily: isRtl ? 'var(--font-cairo)' : undefined }}
+                >
+                  {errors.guardianFullName.message}
+                </p>
+              )}
+            </div>
+
+            {/* Guardian Phone */}
+            <div className="flex flex-col gap-1.5">
+              <label
+                className="text-sm font-semibold text-foreground"
+                style={{ fontFamily: isRtl ? 'var(--font-cairo)' : undefined }}
+              >
+                {t.guardianPhoneLabel}
+              </label>
+              <div className="relative">
+                <span className="absolute inset-y-0 start-3 flex items-center pointer-events-none">
+                  <Phone size={15} className="text-muted-foreground" />
+                </span>
+                <input
+                  {...register('guardianPhone', {
+                    required: t.guardianPhoneRequired,
+                    pattern: { value: /^01[0-9]{9}$/, message: t.guardianPhonePattern },
+                    validate: (val) => !val || val !== studentPhone || t.guardianPhoneSameAsStudent,
+                  })}
+                  type="tel"
+                  placeholder={t.guardianPhonePlaceholder}
+                  dir="ltr"
+                  className={`w-full ps-9 pe-4 py-2.5 rounded-xl border text-sm font-medium bg-background text-foreground placeholder:text-muted-foreground outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary transition-all duration-150 ${
+                    errors.guardianPhone ? 'border-red-400' : 'border-border'
+                  }`}
+                />
+              </div>
+              {errors.guardianPhone && (
+                <p
+                  className="text-red-500 text-xs"
+                  style={{ fontFamily: isRtl ? 'var(--font-cairo)' : undefined }}
+                >
+                  {errors.guardianPhone.message}
+                </p>
+              )}
+            </div>
+
+            {/* Guardian Password */}
+            <div className="flex flex-col gap-1.5">
+              <label
+                className="text-sm font-semibold text-foreground"
+                style={{ fontFamily: isRtl ? 'var(--font-cairo)' : undefined }}
+              >
+                {t.guardianPasswordLabel}
+              </label>
+              <div className="relative">
+                <input
+                  {...register('guardianPassword', {
+                    required: t.guardianPasswordRequired,
+                    minLength: { value: 8, message: t.guardianPasswordMin },
+                  })}
+                  type={showGuardianPassword ? 'text' : 'password'}
+                  placeholder={t.guardianPasswordPlaceholder}
+                  dir="ltr"
+                  className={`w-full ps-4 pe-10 py-2.5 rounded-xl border text-sm font-medium bg-background text-foreground placeholder:text-muted-foreground outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary transition-all duration-150 ${
+                    errors.guardianPassword ? 'border-red-400' : 'border-border'
+                  }`}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowGuardianPassword(!showGuardianPassword)}
+                  className="absolute inset-y-0 end-3 flex items-center text-muted-foreground hover:text-foreground"
+                  tabIndex={-1}
+                >
+                  {showGuardianPassword ? <EyeOff size={15} /> : <Eye size={15} />}
+                </button>
+              </div>
+              {errors.guardianPassword && (
+                <p
+                  className="text-red-500 text-xs"
+                  style={{ fontFamily: isRtl ? 'var(--font-cairo)' : undefined }}
+                >
+                  {errors.guardianPassword.message}
+                </p>
+              )}
+            </div>
+
+            {/* Guardian Confirm Password */}
+            <div className="flex flex-col gap-1.5">
+              <label
+                className="text-sm font-semibold text-foreground"
+                style={{ fontFamily: isRtl ? 'var(--font-cairo)' : undefined }}
+              >
+                {t.guardianConfirmLabel}
+              </label>
+              <div className="relative">
+                <input
+                  {...register('guardianConfirmPassword', {
+                    required: t.guardianConfirmRequired,
+                    validate: (val) => val === guardianPassword || t.guardianConfirmMatch,
+                  })}
+                  type={showGuardianConfirm ? 'text' : 'password'}
+                  placeholder={t.guardianConfirmPlaceholder}
+                  dir="ltr"
+                  className={`w-full ps-4 pe-10 py-2.5 rounded-xl border text-sm font-medium bg-background text-foreground placeholder:text-muted-foreground outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary transition-all duration-150 ${
+                    errors.guardianConfirmPassword ? 'border-red-400' : 'border-border'
+                  }`}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowGuardianConfirm(!showGuardianConfirm)}
+                  className="absolute inset-y-0 end-3 flex items-center text-muted-foreground hover:text-foreground"
+                  tabIndex={-1}
+                >
+                  {showGuardianConfirm ? <EyeOff size={15} /> : <Eye size={15} />}
+                </button>
+              </div>
+              {errors.guardianConfirmPassword && (
+                <p
+                  className="text-red-500 text-xs"
+                  style={{ fontFamily: isRtl ? 'var(--font-cairo)' : undefined }}
+                >
+                  {errors.guardianConfirmPassword.message}
+                </p>
+              )}
+            </div>
+          </div>
         )}
       </div>
 

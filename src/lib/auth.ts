@@ -45,14 +45,6 @@ export async function setAuthCookie(payload: JwtPayload) {
   });
 }
 
-// A JWT can still verify (correct signature, not expired) even after its
-// underlying row is gone — e.g. the DB was reset, or the account was
-// deleted. This confirms the account still actually exists before trusting
-// the token, and clears the stale cookie if not, so the person isn't stuck
-// looking "logged in" to a ghost session.
-//
-// Guardians live in a separate `Guardian` table (not `User`), so which
-// table we check depends on the role carried in the token itself.
 export async function getAuthUser(): Promise<JwtPayload | null> {
   const cookieStore = await cookies();
   const token = cookieStore.get(COOKIE_NAME)?.value;

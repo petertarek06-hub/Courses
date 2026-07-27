@@ -1,3 +1,4 @@
+//src\app\api\student\course\[id]\progress\route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import { getAuthUser } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';

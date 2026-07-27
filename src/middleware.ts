@@ -10,7 +10,7 @@ interface UserPayload extends JWTPayload {
   id?: number;
   phone?: string;
   fullName?: string;
-  studentId?: number; // present only for role === 'guardian'
+  studentId?: number;
 }
 
 const protectedRoutes = [

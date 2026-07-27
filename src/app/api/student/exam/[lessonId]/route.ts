@@ -22,6 +22,10 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ less
       exam: {
         include: {
           examQuestions: {
+            // ✅ NEW: hidden (soft-removed) questions must never be shown to
+            // students — they were pulled from the exam because an admin
+            // removed them after students had already answered.
+            where: { isVisible: true },
             orderBy: { order: 'asc' },
             include: {
               question: {
@@ -121,6 +125,11 @@ export async function POST(
       course: { select: { id: true } },
       exam: {
         include: {
+          // Intentionally NOT filtering by isVisible here: a question could
+          // theoretically be hidden by an admin between the student loading
+          // the exam (GET) and submitting (POST) mid-attempt. We still want
+          // to grade whatever they were shown and already answered — only
+          // future GETs should stop offering it.
           examQuestions: {
             include: {
               question: {
