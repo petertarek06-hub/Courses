@@ -8,9 +8,6 @@ interface Props {
   scheduledAt: Date | string;
   lang: 'ar' | 'en';
   font?: string;
-  // Label shown before the date/time, e.g. "Scheduled exam:" — callers
-  // already have this translated, so it's passed in rather than duplicated
-  // inside this component.
   label: string;
 }
 

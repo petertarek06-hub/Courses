@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import Header from '@/components/Header';
 import Footer from '@/components/Footer';
 import { useLang } from '@/lib/uselang';
-import { BookOpen, Users, ListVideo, Loader2, GraduationCap, ClipboardList } from 'lucide-react';
+import { BookOpen, Users, ListVideo, Loader2, GraduationCap, ClipboardList, Calendar } from 'lucide-react';
 
 const gradeLabelMap: Record<string, { ar: string; en: string }> = {
   'grade-1': { ar: 'الصف الأول الابتدائي', en: 'Grade 1' },
@@ -195,6 +195,14 @@ export default function teacherDashboardPage() {
                     >
                       <ClipboardList size={14} />
                       {t.examsLink}
+                    </button>
+                    <button
+                      onClick={() => router.push(`/teacher-dashboard/courses/${course.id}/scheduled-exams`)}
+                      className="flex-1 flex items-center justify-center gap-2 py-2 rounded-xl border border-border text-foreground text-xs font-bold hover:bg-muted transition-all"
+                      style={{ fontFamily: font }}
+                    >
+                      <Calendar size={14} />
+                      {isRtl ? 'مجدول' : 'Scheduled'}
                     </button>
                   </div>
                 </div>

@@ -3,9 +3,6 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { getAuthUser, hasAdminAccess, isAdmin } from '@/lib/auth';
 
-// Teachers, admins, and assistants can all view/manage the question bank.
-// Deletion is gated separately (teachers on their own courses, or admin) —
-// see the extra check inside DELETE below.
 async function authorize(courseId: number) {
   const user = await getAuthUser();
   if (!user)
@@ -40,7 +37,6 @@ function validatePayload(
     );
   }
 
-  // Essay: optionsJson must be a valid JSON array (can be empty); correctAnswer is optional
   if (type === 'essay') {
     try {
       const parsed = JSON.parse(optionsJson);
@@ -51,10 +47,9 @@ function validatePayload(
         { status: 400 }
       );
     }
-    return null; // correctAnswer holds grading notes — may be empty string
+    return null;
   }
 
-  // MCQ / True-False: need ≥2 options and a correct answer
   if (!correctAnswer) {
     return NextResponse.json(
       { error: 'correctAnswer is required for mcq and true_false' },
@@ -76,11 +71,23 @@ function validatePayload(
   return null;
 }
 
-// ── GET /api/admin/questions?courseId=X[&lessonTag=Y] ─────────
+async function validateTopic(topicId: number, courseId: number): Promise<NextResponse | null> {
+  const topic = await prisma.topic.findUnique({
+    where: { id: topicId },
+    select: { courseId: true },
+  });
+  if (!topic || topic.courseId !== courseId) {
+    return NextResponse.json({ error: 'Topic does not belong to this course' }, { status: 400 });
+  }
+  return null;
+}
+
+// ── GET /api/admin/questions?courseId=X[&topicId=Y] ────────────
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const courseId = Number(searchParams.get('courseId'));
-  const lessonTag = searchParams.get('lessonTag') ?? undefined;
+  const topicIdParam = searchParams.get('topicId');
+  const topicId = topicIdParam ? Number(topicIdParam) : undefined;
 
   if (!courseId) return NextResponse.json({ error: 'courseId required' }, { status: 400 });
 
@@ -88,7 +95,8 @@ export async function GET(req: NextRequest) {
   if (error) return error;
 
   const questions = await prisma.questionBank.findMany({
-    where: { courseId, ...(lessonTag ? { lessonTag } : {}) },
+    where: { courseId, ...(topicId ? { topicId } : {}) },
+    include: { topic: true },
     orderBy: { createdAt: 'asc' },
   });
 
@@ -98,17 +106,20 @@ export async function GET(req: NextRequest) {
 // ── POST /api/admin/questions ──────────────────────────────────
 export async function POST(req: NextRequest) {
   const body = await req.json();
-  const { courseId, text, type, optionsJson, correctAnswer = '', lessonTag } = body;
+  const { courseId, text, type, optionsJson, correctAnswer = '', topicId } = body;
 
-  if (!courseId || !text || !type || !optionsJson || !lessonTag) {
+  if (!courseId || !text || !type || !optionsJson || !topicId) {
     return NextResponse.json(
-      { error: 'courseId, text, type, optionsJson, lessonTag are required' },
+      { error: 'courseId, text, type, optionsJson, topicId are required' },
       { status: 400 }
     );
   }
 
   const { error } = await authorize(Number(courseId));
   if (error) return error;
+
+  const topicError = await validateTopic(Number(topicId), Number(courseId));
+  if (topicError) return topicError;
 
   const validationError = validatePayload(String(type), String(optionsJson), String(correctAnswer));
   if (validationError) return validationError;
@@ -120,8 +131,9 @@ export async function POST(req: NextRequest) {
       type: String(type),
       optionsJson: String(optionsJson),
       correctAnswer: String(correctAnswer),
-      lessonTag: String(lessonTag),
+      topicId: Number(topicId),
     },
+    include: { topic: true },
   });
 
   return NextResponse.json(question, { status: 201 });
@@ -130,11 +142,11 @@ export async function POST(req: NextRequest) {
 // ── PATCH /api/admin/questions ────────────────────────────────
 export async function PATCH(req: NextRequest) {
   const body = await req.json();
-  const { id, text, type, optionsJson, correctAnswer = '', lessonTag } = body;
+  const { id, text, type, optionsJson, correctAnswer = '', topicId } = body;
 
-  if (!id || !text || !type || !optionsJson || !lessonTag) {
+  if (!id || !text || !type || !optionsJson || !topicId) {
     return NextResponse.json(
-      { error: 'id, text, type, optionsJson, lessonTag required' },
+      { error: 'id, text, type, optionsJson, topicId required' },
       { status: 400 }
     );
   }
@@ -148,6 +160,9 @@ export async function PATCH(req: NextRequest) {
   const { error } = await authorize(existing.courseId);
   if (error) return error;
 
+  const topicError = await validateTopic(Number(topicId), existing.courseId);
+  if (topicError) return topicError;
+
   const validationError = validatePayload(String(type), String(optionsJson), String(correctAnswer));
   if (validationError) return validationError;
 
@@ -158,8 +173,9 @@ export async function PATCH(req: NextRequest) {
       type: String(type),
       optionsJson: String(optionsJson),
       correctAnswer: String(correctAnswer),
-      lessonTag: String(lessonTag),
+      topicId: Number(topicId),
     },
+    include: { topic: true },
   });
 
   return NextResponse.json(updated);
@@ -179,11 +195,6 @@ export async function DELETE(req: NextRequest) {
   const { user, error } = await authorize(existing.courseId);
   if (error) return error;
 
-  // Deletion itself is off-limits for assistants specifically. Teachers
-  // deleting questions on their own courses, and real admins deleting
-  // anything, are both still allowed — `authorize` above already confirmed
-  // the teacher owns this course, so we only need to additionally reject
-  // the assistant role here.
   if (user!.role !== 'teacher' && !isAdmin(user!.role))
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
 

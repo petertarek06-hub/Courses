@@ -10,7 +10,6 @@ export const MIN_PASSWORD_LENGTH = 8;
 
 const ALLOWED_MIME_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
 const MAX_AVATAR_BYTES = 3 * 1024 * 1024; // 3 MB
-const ALLOWED_YEARS = ['1', '2', '3', '4']; // سنوات الدراسة المسموحة
 
 /** Saves an uploaded avatar file and returns the public URL path. */
 async function saveAvatar(file: File, userId: number): Promise<string> {
@@ -158,12 +157,6 @@ export async function POST(req: NextRequest) {
       // Student: validate and set academic year
       if (!academicYear) {
         return NextResponse.json({ error: 'السنة الدراسية مطلوبة للطلاب' }, { status: 400 });
-      }
-      if (!ALLOWED_YEARS.includes(academicYear)) {
-        return NextResponse.json(
-          { error: `السنة الدراسية غير صحيحة. السنوات المسموحة: ${ALLOWED_YEARS.join(', ')}` },
-          { status: 400 }
-        );
       }
       finalAcademicYear = academicYear;
     }

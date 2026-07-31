@@ -29,6 +29,7 @@ model User {
   topUpRequests     TopUpRequest[]     @relation("StudentTopUpRequests")
   processedTopUps   TopUpRequest[]     @relation("AdminTopUpRequests")
   examAttempts      ExamAttempt[]      @relation("StudentExamAttempts")
+  scheduledExamAttempts ScheduledExamAttempt[] @relation("StudentScheduledExamAttempts")
   progress          LessonProgress[]   @relation("StudentProgress")
   guardians         Guardian[]         @relation("StudentGuardians")
   teacherPermission TeacherPermission? @relation("TeacherPermissionRow")
@@ -50,9 +51,6 @@ model Guardian {
 }
 
 // ── Teacher Permissions ─────────────────────────────────────────
-// One row per teacher. Missing row = defaults (see /api/teacher/permissions
-// and the admin GET below, which both fill in defaults rather than requiring
-// a row to exist for every teacher).
 model TeacherPermission {
   id              Int      @id @default(autoincrement())
   canAddVideo     Boolean  @default(true)
@@ -82,10 +80,13 @@ model Course {
   teacher   User? @relation("TeacherCourses", fields: [teacherId], references: [id], onDelete: SetNull, onUpdate: NoAction)
   teacherId Int?
 
-  lessons       Lesson[]
-  enrollments   Enrollment[]
-  transactions  Transaction[]
-  bankQuestions QuestionBank[]
+  lessons         Lesson[]
+  enrollments     Enrollment[]
+  transactions    Transaction[]
+  bankQuestions   QuestionBank[]
+  units           Unit[]
+  topics          Topic[]
+  scheduledExams  ScheduledExam[] @relation("CourseScheduledExams")
 
   @@map("courses")
 }
@@ -105,11 +106,9 @@ model Enrollment {
   @@map("enrollments")
 }
 
-// ── Lessons ────────────────────────────────────────────────────
-model Lesson {
+model Unit {
   id        Int      @id @default(autoincrement())
   title     String   @db.NVarChar(200)
-  type      String   @db.VarChar(10) // "video" | "exam"
   order     Int
   isVisible Boolean  @default(true)
   createdAt DateTime @default(now())
@@ -117,15 +116,35 @@ model Lesson {
   course   Course @relation(fields: [courseId], references: [id], onDelete: Cascade, onUpdate: NoAction)
   courseId Int
 
+  lessons Lesson[] // videos and exams both, in one shared per-unit sequence
+
+  @@map("units")
+}
+model Lesson {
+  id        Int      @id @default(autoincrement())
+  title     String   @db.NVarChar(200)
+  type      String   @db.VarChar(10) // "video" | "exam"
+  order     Int      // position within the unit — shared sequence across videos AND exams
+  isVisible Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  course   Course @relation(fields: [courseId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  courseId Int
+
+  // Every lesson now belongs to a unit — videos and exams alike.
+  // NoAction (not Cascade): deleting a Unit never cascades to its lessons —
+  // the /api/admin/units DELETE route already refuses to delete a unit
+  // that still has lessons, so this path should never be exercised.
+  unit   Unit @relation(fields: [unitId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  unitId Int
+
   video    Video?
   exam     Exam?
   progress LessonProgress[]
 
   @@map("lessons")
 }
-
 // ── Videos ─────────────────────────────────────────────────────
-
 model Video {
   id          Int      @id @default(autoincrement())
   vimeoId     String   @db.NVarChar(100)
@@ -139,13 +158,13 @@ model Video {
 }
 
 // ── Exams ──────────────────────────────────────────────────────
+// Lesson-based quizzes (part of the learning sequence)
 model Exam {
   id              Int       @id @default(autoincrement())
   durationMinutes Int?
   passingScore    Int       @default(50)
-  scheduledAt     DateTime? // null = available immediately; future = locked until this time
   createdAt       DateTime  @default(now())
-
+  scheduledAt     DateTime? @map("scheduled_at")
   lesson   Lesson @relation(fields: [lessonId], references: [id], onDelete: Cascade, onUpdate: NoAction)
   lessonId Int    @unique
 
@@ -155,6 +174,43 @@ model Exam {
   @@map("exams")
 }
 
+// ── Scheduled Exams ─────────────────────────────────────────────
+// Independent exams scheduled at specific times, decoupled from lesson sequence
+model ScheduledExam {
+  id              Int       @id @default(autoincrement())
+  title           String    @db.NVarChar(200)
+  durationMinutes Int?
+  passingScore    Int       @default(50)
+  scheduledAt     DateTime  // Required - this is what makes it a scheduled exam
+  isVisible       Boolean   @default(true)
+  createdAt       DateTime  @default(now())
+
+  course   Course @relation("CourseScheduledExams", fields: [courseId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  courseId Int
+
+  examQuestions ScheduledExamQuestion[]
+  attempts      ScheduledExamAttempt[]
+
+  @@map("scheduled_exams")
+}
+
+// ── Topics ─────────────────────────────────────────────────────
+// Per-course list of topics, replacing the old free-text lessonTag.
+model Topic {
+  id        Int      @id @default(autoincrement())
+  name      String   @db.NVarChar(200)
+  order     Int      @default(0)
+  createdAt DateTime @default(now())
+
+  course   Course @relation(fields: [courseId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  courseId Int
+
+  questions QuestionBank[]
+
+  @@unique([courseId, name])
+  @@map("topics")
+}
+
 // ── Question Bank ───────────────────────────────────────────────
 model QuestionBank {
   id            Int      @id @default(autoincrement())
@@ -162,13 +218,16 @@ model QuestionBank {
   type          String   @db.VarChar(15)
   optionsJson   String   @db.NVarChar(1000)
   correctAnswer String   @db.NVarChar(2000)
-  lessonTag     String   @db.NVarChar(200)
   createdAt     DateTime @default(now())
 
   course   Course @relation(fields: [courseId], references: [id], onDelete: Cascade, onUpdate: NoAction)
   courseId Int
 
+  topic   Topic @relation(fields: [topicId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  topicId Int
+
   examQuestions ExamQuestion[]
+  scheduledExamQuestions ScheduledExamQuestion[]
 
   @@map("question_bank")
 }
@@ -189,6 +248,24 @@ model ExamQuestion {
 
   @@unique([examId, questionId])
   @@map("exam_questions")
+}
+
+// ── Scheduled Exam ↔ Question join ─────────────────────────────
+model ScheduledExamQuestion {
+  id        Int     @id @default(autoincrement())
+  order     Int     @default(0)
+  mark      Int     @default(1)
+  isVisible Boolean @default(true)
+  exam      ScheduledExam @relation(fields: [examId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  examId    Int
+
+  question   QuestionBank @relation(fields: [questionId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  questionId Int
+
+  answers ScheduledExamAttemptAnswer[]
+
+  @@unique([examId, questionId])
+  @@map("scheduled_exam_questions")
 }
 
 // ── Exam Attempts ──────────────────────────────────────────────
@@ -227,6 +304,43 @@ model AttemptAnswer {
   @@map("attempt_answers")
 }
 
+// ── Scheduled Exam Attempts ────────────────────────────────────
+model ScheduledExamAttempt {
+  id          Int       @id @default(autoincrement())
+  score       Float?
+  passed      Boolean?
+  startedAt   DateTime  @default(now())
+  submittedAt DateTime?
+
+  student   User @relation("StudentScheduledExamAttempts", fields: [studentId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  studentId Int
+
+  exam   ScheduledExam @relation(fields: [examId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  examId Int
+
+  answers ScheduledExamAttemptAnswer[]
+
+  @@map("scheduled_exam_attempts")
+}
+
+// ── Scheduled Exam Attempt Answers ─────────────────────────────
+model ScheduledExamAttemptAnswer {
+  id          Int      @id @default(autoincrement())
+  givenAnswer String   @db.NVarChar(Max)
+  isCorrect   Boolean?
+  gradedScore Float?
+  graderNotes String?  @db.NVarChar(1000)
+
+  attempt   ScheduledExamAttempt @relation(fields: [attemptId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  attemptId Int
+
+  examQuestion   ScheduledExamQuestion @relation(fields: [examQuestionId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  examQuestionId Int
+
+  @@unique([attemptId, examQuestionId])
+  @@map("scheduled_exam_attempt_answers")
+}
+
 // ── Lesson Progress ────────────────────────────────────────────
 model LessonProgress {
   id          Int       @id @default(autoincrement())
@@ -244,6 +358,7 @@ model LessonProgress {
 }
 
 // ── Center Settings (singleton row, id = 1) ──────────────────────
+// ── Center Settings (singleton row, id = 1) ──────────────────────
 model CenterSettings {
   id                  Int      @id @default(autoincrement())
   siteName            String   @default("EduCenter") @db.NVarChar(150)
@@ -257,24 +372,23 @@ model CenterSettings {
   youtubeUrl          String?  @db.NVarChar(300)
   whatsappButtonLabel String?  @db.NVarChar(100)
   copyrightText       String?  @db.NVarChar(200)
+  // ── Footer special offer ──
+  offerEnabled        Boolean  @default(false)
+  offerTitle          String?  @db.NVarChar(200)
+  offerText           String?  @db.NVarChar(500)
+  offerImageUrl       String?  @db.NVarChar(500)
   updatedAt           DateTime @updatedAt
 
   @@map("center_settings")
 }
-
 // ── Top-Up Requests ────────────────────────────────────────────
-// The workflow/review side of a balance top-up. Lives entirely on its own:
-// created by a student, reviewed by an admin, and never represents money
-// that has actually moved yet. Approving one produces exactly one
-// Transaction row (see below); rejecting one produces none.
-
 model TopUpRequest {
   id            Int       @id @default(autoincrement())
   amount        Float
-  method        String    @db.VarChar(20) // "cash" | "wallet" | "fawry"
-  status        String    @default("pending") @db.VarChar(20) // "pending" | "approved" | "rejected"
-  senderPhone   String?   @db.VarChar(20) // required for "wallet"
-  proofImageUrl String?   @db.NVarChar(500) // required for "wallet"
+  method        String    @db.VarChar(20)
+  status        String    @default("pending") @db.VarChar(20)
+  senderPhone   String?   @db.VarChar(20)
+  proofImageUrl String?   @db.NVarChar(500)
   notes         String?   @db.NVarChar(300)
   createdAt     DateTime  @default(now())
   processedAt   DateTime?
@@ -285,50 +399,26 @@ model TopUpRequest {
   processedBy   User? @relation("AdminTopUpRequests", fields: [processedById], references: [id], onDelete: NoAction, onUpdate: NoAction)
   processedById Int?
 
-  // Changed from `transaction Transaction?` to Transaction[]: Prisma
-  // requires @unique on the FK side for a true 1:1 relation, but we
-  // deliberately don't put a plain @unique on Transaction.topUpRequestId
-  // (SQL Server would then reject a second NULL from purchase/adjustment
-  // rows). So both sides of this relation are modeled as 1:many at the
-  // Prisma level; "at most one" is enforced for real by the filtered
-  // unique index on transactions.topUpRequestId (already applied to the
-  // DB) rather than by Prisma's type system. In practice this array will
-  // only ever contain zero or one element.
   transactions Transaction[]
 
   @@map("topup_requests")
 }
 
 // ── Transactions ───────────────────────────────────────────────
-// Pure, append-only ledger: a row exists here if and only if the student's
-// balance actually changed. No pending/rejected states, no unused columns
-// depending on row type — if it's here, it happened.
-//
-// topUpRequestId is intentionally NOT @unique at the Prisma level anymore.
-// SQL Server treats a plain unique constraint as allowing only ONE null
-// across the whole table — but every "purchase" and "adjustment" row
-// leaves this column null, so a second one would falsely collide with
-// the first. The real uniqueness ("at most one transaction per top-up
-// request, when one exists") is instead enforced by a filtered unique
-// index created directly in the migration SQL below.
 model Transaction {
   id        Int      @id @default(autoincrement())
   amount    Float
-  type      String   @db.VarChar(20) // "topup" | "purchase" | "adjustment"
-  method    String   @db.VarChar(20) // "cash" | "wallet" | "fawry" | "balance" | "manual"
+  type      String   @db.VarChar(20)
+  method    String   @db.VarChar(20)
   notes     String?  @db.NVarChar(300)
   createdAt DateTime @default(now())
 
   student   User @relation("StudentTransactions", fields: [studentId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   studentId Int
 
-  // Set for "purchase" transactions only.
   course   Course? @relation(fields: [courseId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   courseId Int?
 
-  // Set for "topup" transactions only — traces back to the request that
-  // was approved to create this ledger entry. Enforced unique (when not
-  // null) via a filtered index in migration SQL, not @unique here.
   topUpRequest   TopUpRequest? @relation(fields: [topUpRequestId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   topUpRequestId Int?
 

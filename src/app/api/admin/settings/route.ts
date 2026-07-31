@@ -44,6 +44,10 @@ export async function PATCH(req: NextRequest) {
     youtubeUrl,
     whatsappButtonLabel,
     copyrightText,
+    // ── Footer special offer ──
+    offerEnabled,
+    offerTitle,
+    offerText,
   } = body ?? {};
 
   if (siteName !== undefined && !String(siteName).trim())
@@ -67,6 +71,10 @@ export async function PATCH(req: NextRequest) {
         whatsappButtonLabel: whatsappButtonLabel || null,
       }),
       ...(copyrightText !== undefined && { copyrightText: copyrightText || null }),
+      // ── Footer special offer ──
+      ...(offerEnabled !== undefined && { offerEnabled: Boolean(offerEnabled) }),
+      ...(offerTitle !== undefined && { offerTitle: offerTitle || null }),
+      ...(offerText !== undefined && { offerText: offerText || null }),
     },
   });
 

@@ -16,39 +16,48 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   });
   if (!enrollment) return NextResponse.json({ error: 'Not enrolled' }, { status: 403 });
 
-  // Fetch course + ALL visible lessons (video + exam) + student progress
+  // Fetch course → visible units → visible lessons (video + exam) + student progress.
+  // `order` is only meaningful WITHIN a unit (shared sequence per unit), so lessons
+  // must stay nested under their unit rather than flattened across the course —
+  // flattening was the bug: it scrambled sequence across unit boundaries and threw
+  // every scheduled exam in the whole course into one undifferentiated bucket.
   const course = await prisma.course.findUnique({
     where: { id: courseId },
     include: {
       teacher: { select: { id: true, fullName: true, avatarUrl: true } },
-      lessons: {
-        where: { isVisible: true }, // ✅ removed type:'video' — include exams too
+      units: {
+        where: { isVisible: true },
         orderBy: { order: 'asc' },
         include: {
-          video: { select: { id: true, vimeoId: true, description: true, createdAt: true } },
-          exam: {
-            select: {
-              id: true,
-              durationMinutes: true,
-              passingScore: true,
-              scheduledAt: true, // ✅ needed by the client to lock/countdown a scheduled exam
-              // Include the student's latest attempt for this exam
-              attempts: {
-                where: { studentId: user.id },
-                orderBy: { startedAt: 'desc' },
-                take: 1,
+          lessons: {
+            where: { isVisible: true },
+            orderBy: { order: 'asc' },
+            include: {
+              video: { select: { id: true, vimeoId: true, description: true, createdAt: true } },
+              exam: {
                 select: {
                   id: true,
-                  score: true,
-                  passed: true,
-                  submittedAt: true,
+                  durationMinutes: true,
+                  passingScore: true,
+                  scheduledAt: true,
+                  attempts: {
+                    where: { studentId: user.id },
+                    orderBy: { startedAt: 'desc' },
+                    take: 1,
+                    select: {
+                      id: true,
+                      score: true,
+                      passed: true,
+                      submittedAt: true,
+                    },
+                  },
                 },
               },
+              progress: {
+                where: { studentId: user.id },
+                select: { completed: true, completedAt: true },
+              },
             },
-          },
-          progress: {
-            where: { studentId: user.id },
-            select: { completed: true, completedAt: true },
           },
         },
       },

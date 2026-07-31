@@ -61,12 +61,21 @@ interface Lesson {
   exam: ExamRecord | null;
   progress: LessonProgress[];
 }
+// ── NEW: lessons now live under a unit, and units are what the
+// course is actually structured around — sequencing, locking, and
+// "which unit is this scheduled exam in" all need this nesting.
+interface UnitG {
+  id: number;
+  title: string;
+  order: number;
+  lessons: Lesson[];
+}
 interface Course {
   id: number;
   name: string;
   subject: string;
   teacher: { id: number; fullName: string; avatarUrl: string | null };
-  lessons: Lesson[];
+  units: UnitG[];
 }
 
 const content = {
@@ -128,16 +137,14 @@ const content = {
   },
 };
 
+type TType = (typeof content)['ar'];
+
 function formatDuration(sec: number | null) {
   if (!sec) return '';
   return `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`;
 }
 
 // ── Vimeo duration lookup ──────────────────────────────────────
-// The Video model has no stored duration field — durations are fetched
-// live from Vimeo's public oEmbed endpoint, keyed by vimeoId, and cached
-// in-memory so the same video (e.g. active in the main panel AND visible
-// in the sidebar) is only ever fetched once per page load.
 const vimeoDurationCache = new Map<string, number | null>();
 
 function useVimeoDuration(vimeoId: string | undefined): number | null {
@@ -202,8 +209,8 @@ function Avatar({ url, name, size = 32 }: { url: string | null; name: string; si
 }
 
 // Row for a normal sequenced lesson (video or non-scheduled exam).
-// `sequencedLessons`/`index` are relative to the SEQUENCED list only —
-// scheduled exams never appear here and never affect this lock chain.
+// `sequencedLessons`/`index` are relative to the lesson's OWN UNIT's
+// sequenced list only — locking never crosses unit boundaries.
 function LessonRow({
   lesson,
   index,
@@ -353,6 +360,80 @@ function ScheduledExamRow({
   );
 }
 
+// ── NEW: one unit's worth of sidebar content — header + its own
+// sequenced lessons + its own scheduled exams. Rendered once per unit
+// so scheduled exams are grouped under the unit that actually owns
+// them, and lock-chains never leak across unit boundaries.
+function UnitSection({
+  unit,
+  activeLessonId,
+  isRtl,
+  font,
+  t,
+  onSelect,
+}: {
+  unit: UnitG;
+  activeLessonId: number | undefined;
+  isRtl: boolean;
+  font: string | undefined;
+  t: TType;
+  onSelect: (lesson: Lesson) => void;
+}) {
+  const sequenced = getSequencedLessons(unit.lessons) as Lesson[];
+  const scheduled = unit.lessons.filter(isScheduledExam) as Lesson[];
+
+  if (sequenced.length === 0 && scheduled.length === 0) return null;
+
+  return (
+    <div>
+      <div className="px-4 py-2 border-t border-border bg-muted/30">
+        <p
+          className="text-xs font-bold text-foreground truncate"
+          style={{ fontFamily: font }}
+          title={unit.title}
+        >
+          {unit.title}
+        </p>
+      </div>
+      {sequenced.map((lesson, index) => (
+        <LessonRow
+          key={lesson.id}
+          lesson={lesson}
+          index={index}
+          sequencedLessons={sequenced}
+          isActive={activeLessonId === lesson.id}
+          isRtl={isRtl}
+          font={font}
+          lockedMsg={t.locked}
+          onClick={() => onSelect(lesson)}
+        />
+      ))}
+      {scheduled.length > 0 && (
+        <>
+          <div className="px-4 py-1.5 bg-muted/10">
+            <p
+              className="text-[11px] font-bold text-muted-foreground uppercase tracking-wide"
+              style={{ fontFamily: font }}
+            >
+              {t.scheduledExamsTitle}
+            </p>
+          </div>
+          {scheduled.map((lesson) => (
+            <ScheduledExamRow
+              key={lesson.id}
+              lesson={lesson}
+              isActive={activeLessonId === lesson.id}
+              isRtl={isRtl}
+              font={font}
+              onClick={() => onSelect(lesson)}
+            />
+          ))}
+        </>
+      )}
+    </div>
+  );
+}
+
 function ExamPanel({
   lesson,
   lang,
@@ -449,10 +530,7 @@ function ExamPanel({
   );
 }
 
-// Vimeo embed locked down against easy downloading/re-sharing:
-// - dnt=1 disables Vimeo's own tracking/share affordances
-// - byline/title/portrait/sharing all off removes the native share button
-// - a transparent overlay blocks right-click "save video as" and drag-out
+// Vimeo embed locked down against easy downloading/re-sharing.
 function ProtectedPlayer({ vimeoId }: { vimeoId: string }) {
   return (
     <div
@@ -467,11 +545,26 @@ function ProtectedPlayer({ vimeoId }: { vimeoId: string }) {
         allow="autoplay; fullscreen; picture-in-picture"
         allowFullScreen
       />
-      {/* Invisible layer that eats right-click / long-press so the iframe's
-          own context menu (which can expose download links) never opens. */}
       <div className="absolute inset-0" style={{ pointerEvents: 'none' }} aria-hidden="true" />
     </div>
   );
+}
+
+// Walk units in order; within each unit walk its own sequenced list.
+// First unlocked-but-incomplete lesson wins. If every unit is fully
+// complete (or empty of sequenced lessons), fall back to the very
+// first sequenced lesson of the first non-empty unit.
+function findFirstUnfinished(units: UnitG[]): Lesson | null {
+  for (const unit of units) {
+    const seq = getSequencedLessons(unit.lessons) as Lesson[];
+    const found = seq.find((l, i) => isLessonUnlocked(seq, i) && !isLessonComplete(l));
+    if (found) return found;
+  }
+  for (const unit of units) {
+    const seq = getSequencedLessons(unit.lessons) as Lesson[];
+    if (seq.length) return seq[0];
+  }
+  return null;
 }
 
 export default function StudentCourseLessonsPage({ params }: { params: Promise<{ id: string }> }) {
@@ -491,7 +584,6 @@ export default function StudentCourseLessonsPage({ params }: { params: Promise<{
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [mobileListOpen, setMobileListOpen] = useState(false);
 
-  // Live-fetched duration for whichever video lesson is currently active
   const activeVideoDuration = useVimeoDuration(
     activeLesson?.type === 'video' ? activeLesson.video?.vimeoId : undefined
   );
@@ -516,11 +608,7 @@ export default function StudentCourseLessonsPage({ params }: { params: Promise<{
       .then((d) => {
         if (!d) return;
         setCourse(d.course);
-        const allLessons: Lesson[] = d.course.lessons;
-        const sequenced = getSequencedLessons(allLessons) as Lesson[];
-        const firstUnfinished =
-          sequenced.find((l, i) => isLessonUnlocked(sequenced, i) && !isLessonComplete(l)) ??
-          sequenced[0];
+        const firstUnfinished = findFirstUnfinished(d.course.units as UnitG[]);
         if (firstUnfinished) setActiveLesson(firstUnfinished);
       })
       .catch(() => setError('load'))
@@ -543,7 +631,7 @@ export default function StudentCourseLessonsPage({ params }: { params: Promise<{
       await fetchCourse();
       setCourse((prev) => {
         if (!prev) return prev;
-        const updated = prev.lessons.find((l) => l.id === activeLesson.id);
+        const updated = prev.units.flatMap((u) => u.lessons).find((l) => l.id === activeLesson.id);
         if (updated) setActiveLesson(updated);
         return prev;
       });
@@ -551,11 +639,13 @@ export default function StudentCourseLessonsPage({ params }: { params: Promise<{
     setMarking(false);
   };
 
-  const sequencedLessons = course ? (getSequencedLessons(course.lessons) as Lesson[]) : [];
-  const scheduledExams = course ? course.lessons.filter(isScheduledExam) : [];
+  const allSequencedLessons = course
+    ? course.units.flatMap((u) => getSequencedLessons(u.lessons) as Lesson[])
+    : [];
+  const noLessonsAtAll = course ? course.units.every((u) => u.lessons.length === 0) : true;
 
-  const completedCount = sequencedLessons.filter(isLessonComplete).length;
-  const totalCount = sequencedLessons.length;
+  const completedCount = allSequencedLessons.filter(isLessonComplete).length;
+  const totalCount = allSequencedLessons.length;
   const progressPct = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0;
   const isCompleted = activeLesson ? isLessonComplete(activeLesson) : false;
 
@@ -638,7 +728,7 @@ export default function StudentCourseLessonsPage({ params }: { params: Promise<{
               <div className="flex-1 flex flex-col items-center justify-center gap-3 p-8 text-center">
                 <PlayCircle size={48} className="text-muted-foreground/30" />
                 <p className="text-muted-foreground text-sm" style={{ fontFamily: font }}>
-                  {course.lessons.length === 0 ? t.noLessons : t.selectLesson}
+                  {noLessonsAtAll ? t.noLessons : t.selectLesson}
                 </p>
               </div>
             ) : activeLesson.type === 'exam' ? (
@@ -730,7 +820,7 @@ export default function StudentCourseLessonsPage({ params }: { params: Promise<{
             </button>
             {mobileListOpen && (
               <div className="max-h-[60vh] overflow-y-auto border-t border-border">
-                {sequencedLessons.length === 0 ? (
+                {noLessonsAtAll ? (
                   <p
                     className="p-4 text-xs text-muted-foreground text-center"
                     style={{ fontFamily: font }}
@@ -738,48 +828,20 @@ export default function StudentCourseLessonsPage({ params }: { params: Promise<{
                     {t.noLessons}
                   </p>
                 ) : (
-                  sequencedLessons.map((lesson, index) => (
-                    <LessonRow
-                      key={lesson.id}
-                      lesson={lesson}
-                      index={index}
-                      sequencedLessons={sequencedLessons}
-                      isActive={activeLesson?.id === lesson.id}
+                  course.units.map((unit) => (
+                    <UnitSection
+                      key={unit.id}
+                      unit={unit}
+                      activeLessonId={activeLesson?.id}
                       isRtl={isRtl}
                       font={font}
-                      lockedMsg={t.locked}
-                      onClick={() => {
+                      t={t}
+                      onSelect={(lesson) => {
                         setActiveLesson(lesson);
                         setMobileListOpen(false);
                       }}
                     />
                   ))
-                )}
-
-                {scheduledExams.length > 0 && (
-                  <>
-                    <div className="px-4 py-2 border-t border-border bg-muted/20">
-                      <p
-                        className="text-xs font-bold text-muted-foreground uppercase tracking-wide"
-                        style={{ fontFamily: font }}
-                      >
-                        {t.scheduledExamsTitle}
-                      </p>
-                    </div>
-                    {scheduledExams.map((lesson) => (
-                      <ScheduledExamRow
-                        key={lesson.id}
-                        lesson={lesson}
-                        isActive={activeLesson?.id === lesson.id}
-                        isRtl={isRtl}
-                        font={font}
-                        onClick={() => {
-                          setActiveLesson(lesson);
-                          setMobileListOpen(false);
-                        }}
-                      />
-                    ))}
-                  </>
                 )}
               </div>
             )}
@@ -814,7 +876,7 @@ export default function StudentCourseLessonsPage({ params }: { params: Promise<{
                     {t.sidebarTitle}
                   </p>
                 </div>
-                {sequencedLessons.length === 0 ? (
+                {noLessonsAtAll ? (
                   <p
                     className="p-4 text-xs text-muted-foreground text-center"
                     style={{ fontFamily: font }}
@@ -822,42 +884,17 @@ export default function StudentCourseLessonsPage({ params }: { params: Promise<{
                     {t.noLessons}
                   </p>
                 ) : (
-                  sequencedLessons.map((lesson, index) => (
-                    <LessonRow
-                      key={lesson.id}
-                      lesson={lesson}
-                      index={index}
-                      sequencedLessons={sequencedLessons}
-                      isActive={activeLesson?.id === lesson.id}
+                  course.units.map((unit) => (
+                    <UnitSection
+                      key={unit.id}
+                      unit={unit}
+                      activeLessonId={activeLesson?.id}
                       isRtl={isRtl}
                       font={font}
-                      lockedMsg={t.locked}
-                      onClick={() => setActiveLesson(lesson)}
+                      t={t}
+                      onSelect={(lesson) => setActiveLesson(lesson)}
                     />
                   ))
-                )}
-
-                {scheduledExams.length > 0 && (
-                  <>
-                    <div className="px-4 py-3 border-t border-b border-border bg-muted/20">
-                      <p
-                        className="text-xs font-bold text-muted-foreground uppercase tracking-wide"
-                        style={{ fontFamily: font }}
-                      >
-                        {t.scheduledExamsTitle}
-                      </p>
-                    </div>
-                    {scheduledExams.map((lesson) => (
-                      <ScheduledExamRow
-                        key={lesson.id}
-                        lesson={lesson}
-                        isActive={activeLesson?.id === lesson.id}
-                        isRtl={isRtl}
-                        font={font}
-                        onClick={() => setActiveLesson(lesson)}
-                      />
-                    ))}
-                  </>
                 )}
               </div>
             )}

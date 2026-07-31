@@ -44,7 +44,9 @@ export default function Header({ lang, onToggleLang, currentPath = '/' }: Header
       ? '/admin'
       : user?.role === 'teacher'
         ? '/teacher-dashboard'
-        : '/student-dashboard';
+        : user?.role === 'guardian'
+          ? '/guardian-dashboard'
+          : '/student-dashboard';
 
   useEffect(() => {
     fetch('/api/auth/me')
@@ -145,7 +147,7 @@ export default function Header({ lang, onToggleLang, currentPath = '/' }: Header
                       </span>
                     )}
                     {user.role === 'assistant' && (
-                      <span className="text-xs bg-amber-500/20 text-amber-700 px-1.5 py-0.5 rounded-md font-bold">
+                      <span className="text-xs bg-sky-500/20 text-sky-700 px-1.5 py-0.5 rounded-md font-bold">
                         {lang === 'ar' ? 'مساعد' : 'assistant'}
                       </span>
                     )}
@@ -155,6 +157,11 @@ export default function Header({ lang, onToggleLang, currentPath = '/' }: Header
                         style={{ fontFamily: isRtl ? 'var(--font-cairo)' : undefined }}
                       >
                         {lang === 'ar' ? 'مدرس' : 'Teacher'}
+                      </span>
+                    )}
+                    {user.role === 'guardian' && (
+                      <span className="text-xs bg-orange-500/20 text-orange-700 px-1.5 py-0.5 rounded-md font-bold">
+                        {lang === 'ar' ? 'ولي أمر' : 'Guardian'}
                       </span>
                     )}
                   </Link>
@@ -241,12 +248,22 @@ export default function Header({ lang, onToggleLang, currentPath = '/' }: Header
                       {lang === 'ar' ? 'أدمن' : 'Admin'}
                     </span>
                   )}
+                  {user.role === 'assistant' && (
+                    <span className="text-xs bg-sky-500/20 text-sky-700 px-1.5 py-0.5 rounded-md font-bold">
+                      {lang === 'ar' ? 'مساعد' : 'assistant'}
+                    </span>
+                  )}
                   {user.role === 'teacher' && (
                     <span
                       className="text-xs bg-secondary text-white px-1.5 py-0.5 rounded-md font-bold"
                       style={{ fontFamily: isRtl ? 'var(--font-cairo)' : undefined }}
                     >
                       {lang === 'ar' ? 'مدرس' : 'Teacher'}
+                    </span>
+                  )}
+                  {user.role === 'guardian' && (
+                    <span className="text-xs bg-orange-500/20 text-orange-700 px-1.5 py-0.5 rounded-md font-bold">
+                      {lang === 'ar' ? 'ولي أمر' : 'Guardian'}
                     </span>
                   )}
                 </Link>

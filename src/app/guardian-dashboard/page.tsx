@@ -1,4 +1,4 @@
-// src/app/student-dashboard/page.tsx
+// src/app/guardian-dashboard/page.tsx
 'use client';
 import React, { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
@@ -6,8 +6,6 @@ import Image from 'next/image';
 import Header from '@/components/Header';
 import Footer from '@/components/Footer';
 import ExamCountdownBadge from '@/components/ExamCountdownBadge';
-import EditProfileModal from './components/EditProfileModal';
-import ScheduledExamsList from '@/components/ScheduledExamsList';
 import { useLang } from '@/lib/uselang';
 import {
   User,
@@ -29,7 +27,6 @@ import {
   Phone,
   MapPin,
   MessageCircle,
-  Pencil,
   ChevronRight,
 } from 'lucide-react';
 
@@ -48,9 +45,10 @@ const gradeLabelMap: Record<string, { ar: string; en: string }> = {
   'grade-12': { ar: 'الصف الثالث الثانوي', en: 'Grade 12' },
 };
 
-// ✅ NEW: same Egyptian mobile format already enforced on admin/students
-// (01 + 9 digits = 11 digits total). Reused here so a student can't submit
-// a wallet top-up request with an obviously-malformed sender phone number.
+// Same Egyptian mobile format enforced on the student dashboard's own
+// top-up form (01 + 9 digits = 11 digits total). Reused here so a
+// guardian can't submit a wallet top-up with an obviously-malformed
+// sender phone number either.
 const EG_PHONE_REGEX = /^01[0-9]{9}$/;
 
 interface Profile {
@@ -127,9 +125,8 @@ interface CenterInfo {
 
 const content = {
   ar: {
-    title: 'لوحة الطالب',
-    profile: 'الملف الشخصي',
-    editProfile: 'تعديل البيانات',
+    title: 'متابعة الطالب',
+    profile: 'ملف الطالب',
     courses: 'الكورسات المسجّلة',
     exams: 'نتائج الامتحانات',
     balance: 'الرصيد والمعاملات',
@@ -141,8 +138,8 @@ const content = {
     noGrade: 'غير محدد',
     currentBalance: 'الرصيد الحالي',
     egp: 'ج.م',
-    noCourses: 'لم تسجّل في أي كورس بعد',
-    noExams: 'لم تؤدِّ أي امتحان بعد',
+    noCourses: 'لم يسجّل الطالب في أي كورس بعد',
+    noExams: 'لم يؤدِّ الطالب أي امتحان بعد',
     noTransactions: 'لا توجد معاملات',
     progress: 'التقدم',
     lessons: 'درس',
@@ -166,8 +163,8 @@ const content = {
     fawry: 'فوري',
     wallet: 'محفظة ذكية',
     loading: 'جارٍ التحميل...',
-    watchNow: 'شاهد الكورس ←',
-    topUp: 'شحن الرصيد',
+    watchNow: 'عرض الكورس ←',
+    topUp: 'شحن رصيد الطالب',
     topUpAmount: 'المبلغ (ج.م)',
     topUpMethod: 'طريقة الدفع',
     topUpCash: 'كاش (بالمركز)',
@@ -183,7 +180,7 @@ const content = {
     topUpNotes: 'ملاحظات (اختياري)',
     topUpNotesPlaceholder: 'مثال: رقم المعاملة أو اسمك على المحفظة',
     topUpBtn: 'أرسل طلب الشحن',
-    topUpSent: 'تم إرسال طلبك! سيراجعه الإدارة ويُضاف رصيدك قريبًا.',
+    topUpSent: 'تم إرسال طلبك! سيراجعه الإدارة ويُضاف الرصيد قريبًا.',
     topUpError: 'حدث خطأ، حاول مرة أخرى',
     topUpPending: 'طلب قيد المراجعة',
     topUpCompleted: 'مكتمل',
@@ -202,9 +199,8 @@ const content = {
     examScheduled: 'امتحان مجدول:',
   },
   en: {
-    title: 'Student Dashboard',
-    profile: 'Profile',
-    editProfile: 'Edit Profile',
+    title: 'Student Tracking',
+    profile: 'Student Profile',
     courses: 'Enrolled Courses',
     exams: 'Exam Results',
     balance: 'Balance & Transactions',
@@ -216,8 +212,8 @@ const content = {
     noGrade: 'Not set',
     currentBalance: 'Current Balance',
     egp: 'EGP',
-    noCourses: 'No courses enrolled yet',
-    noExams: 'No exams taken yet',
+    noCourses: 'The student is not enrolled in any courses yet',
+    noExams: 'The student has not taken any exams yet',
     noTransactions: 'No transactions',
     progress: 'Progress',
     lessons: 'lessons',
@@ -241,8 +237,8 @@ const content = {
     fawry: 'Fawry',
     wallet: 'Smart Wallet',
     loading: 'Loading...',
-    watchNow: 'Watch Course →',
-    topUp: 'Top Up Balance',
+    watchNow: 'View Course →',
+    topUp: "Top Up Student's Balance",
     topUpAmount: 'Amount (EGP)',
     topUpMethod: 'Payment method',
     topUpCash: 'Cash (at center)',
@@ -258,7 +254,7 @@ const content = {
     topUpNotes: 'Notes (optional)',
     topUpNotesPlaceholder: 'e.g. transaction number or your wallet name',
     topUpBtn: 'Send Top-Up Request',
-    topUpSent: 'Request sent! Admin will review and credit your balance soon.',
+    topUpSent: "Request sent! Admin will review and credit the student's balance soon.",
     topUpError: 'Something went wrong, please try again',
     topUpPending: 'Pending review',
     topUpCompleted: 'Completed',
@@ -328,7 +324,7 @@ function SectionCard({
   );
 }
 
-export default function StudentDashboardPage() {
+export default function GuardianDashboardPage() {
   const { lang, toggleLang } = useLang();
   const router = useRouter();
   const t = content[lang];
@@ -338,7 +334,6 @@ export default function StudentDashboardPage() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [centerInfo, setCenterInfo] = useState<CenterInfo | null>(null);
-  const [editOpen, setEditOpen] = useState(false);
 
   // Top-up form state
   const [topUpAmount, setTopUpAmount] = useState('');
@@ -348,13 +343,13 @@ export default function StudentDashboardPage() {
   const [topUpProof, setTopUpProof] = useState<File | null>(null);
   const [topUpLoading, setTopUpLoading] = useState(false);
   const [topUpStatus, setTopUpStatus] = useState<'idle' | 'success' | 'error'>('idle');
-  // ✅ NEW: distinct from topUpStatus's generic error banner — this is a
+  // Distinct from topUpStatus's generic error banner — this is a
   // field-level message shown right under the phone input, cleared as
-  // soon as the student edits the field again.
+  // soon as the guardian edits the field again.
   const [senderPhoneError, setSenderPhoneError] = useState('');
 
   const fetchDashboard = () => {
-    fetch('/api/student/dashboard')
+    fetch('/api/guardian/dashboard')
       .then((r) => {
         if (r.status === 401) {
           router.replace('/sign-up-login-screen');
@@ -381,7 +376,7 @@ export default function StudentDashboardPage() {
 
     if (topUpMethod === 'wallet') {
       const phone = topUpSenderPhone.trim();
-      // ✅ NEW: verify the sender phone actually looks like a real Egyptian
+      // Verify the sender phone actually looks like a real Egyptian
       // mobile number before sending the request, instead of only checking
       // that the field is non-empty. Blocks obvious typos/garbage input
       // from ever reaching the API.
@@ -405,7 +400,7 @@ export default function StudentDashboardPage() {
         if (topUpProof) formData.append('proof', topUpProof);
       }
 
-      const res = await fetch('/api/student/wallet', {
+      const res = await fetch('/api/guardian/wallet', {
         method: 'POST',
         body: formData,
       });
@@ -472,8 +467,6 @@ export default function StudentDashboardPage() {
   //  - submitted but still awaiting
   //    manual grading of essay Qs   → submittedAt set, passed is null
   //  - fully graded                 → submittedAt set, passed is true/false
-  // Previously only the first/third were distinguished, so an ungraded
-  // attempt (passed === null, which is falsy) rendered as "Failed".
   const examStatusBadge = (attempt: ExamAttempt) => {
     if (!attempt.submittedAt) {
       return (
@@ -511,7 +504,7 @@ export default function StudentDashboardPage() {
   if (loading) {
     return (
       <div className="min-h-screen flex flex-col bg-background" dir={isRtl ? 'rtl' : 'ltr'}>
-        <Header lang={lang} onToggleLang={toggleLang} currentPath="/student-dashboard" />
+        <Header lang={lang} onToggleLang={toggleLang} currentPath="/guardian-dashboard" />
         <div className="flex-1 flex items-center justify-center">
           <Loader2 size={32} className="animate-spin text-primary" />
         </div>
@@ -529,7 +522,7 @@ export default function StudentDashboardPage() {
       dir={isRtl ? 'rtl' : 'ltr'}
       style={{ fontFamily: font }}
     >
-      <Header lang={lang} onToggleLang={toggleLang} currentPath="/student-dashboard" />
+      <Header lang={lang} onToggleLang={toggleLang} currentPath="/guardian-dashboard" />
 
       <main className="flex-1 max-w-screen-xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-8">
         <h1 className="text-2xl font-extrabold text-foreground mb-6" style={{ fontFamily: font }}>
@@ -539,7 +532,7 @@ export default function StudentDashboardPage() {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* ── Left column ── */}
           <div className="flex flex-col gap-6">
-            {/* Profile */}
+            {/* Profile — read-only, no edit affordance for guardians */}
             <SectionCard title={t.profile} icon={User}>
               <div className="flex flex-col items-center text-center gap-3">
                 <Avatar url={profile.avatarUrl} name={profile.fullName} size={72} />
@@ -549,14 +542,6 @@ export default function StudentDashboardPage() {
                     {gradeLabel(profile.academicYear)}
                   </p>
                 </div>
-                <button
-                  onClick={() => setEditOpen(true)}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border text-xs font-bold text-muted-foreground hover:bg-muted hover:text-foreground transition-all duration-150"
-                  style={{ fontFamily: font }}
-                >
-                  <Pencil size={13} />
-                  {t.editProfile}
-                </button>
               </div>
               <div className="mt-4 flex flex-col gap-2 text-sm">
                 <div className="flex justify-between gap-2">
@@ -580,10 +565,7 @@ export default function StudentDashboardPage() {
               </div>
             </SectionCard>
 
-            {/* Scheduled Exams */}
-            <ScheduledExamsList />
-
-            {/* Balance + Top Up */}
+            {/* Balance + Top Up (guardian may fund the student's wallet) */}
             <SectionCard title={t.balance} icon={Wallet}>
               {/* Current balance */}
               <div className="flex items-center justify-between p-4 rounded-xl bg-primary/5 border border-primary/20 mb-5">
@@ -689,8 +671,8 @@ export default function StudentDashboardPage() {
                       value={topUpSenderPhone}
                       onChange={(e) => {
                         setTopUpSenderPhone(e.target.value);
-                        // ✅ NEW: clear the field-level error as soon as the
-                        // student starts correcting it, rather than leaving
+                        // Clear the field-level error as soon as the
+                        // guardian starts correcting it, rather than leaving
                         // a stale error message next to freshly-typed input.
                         if (senderPhoneError) setSenderPhoneError('');
                       }}
@@ -918,7 +900,7 @@ export default function StudentDashboardPage() {
 
           {/* ── Right column ── */}
           <div className="lg:col-span-2 flex flex-col gap-6">
-            {/* Enrolled Courses */}
+            {/* Enrolled Courses — view-only */}
             <SectionCard title={t.courses} icon={BookOpen}>
               {enrollments.length === 0 ? (
                 <div className="flex flex-col items-center py-10 gap-2">
@@ -930,17 +912,11 @@ export default function StudentDashboardPage() {
               ) : (
                 <div className="flex flex-col gap-4">
                   {enrollments.map((e) => (
-                    <div
-                      key={e.id}
-                      onClick={() =>
-                        router.push(`/student-dashboard/courses/${e.course.id}/lessons`)
-                      }
-                      className="p-4 rounded-xl border border-border bg-background hover:bg-muted/20 hover:border-primary/40 transition-all cursor-pointer group"
-                    >
+                    <div key={e.id} className="p-4 rounded-xl border border-border bg-background">
                       <div className="flex items-start justify-between gap-3 mb-3">
                         <div className="min-w-0">
                           <p
-                            className="font-bold text-foreground truncate group-hover:text-primary transition-colors"
+                            className="font-bold text-foreground truncate"
                             style={{ fontFamily: font }}
                           >
                             {e.course.name}
@@ -981,12 +957,6 @@ export default function StudentDashboardPage() {
                         <p className="text-xs text-muted-foreground" style={{ fontFamily: font }}>
                           {e.completedLessons} / {e.totalLessons} {t.lessons}
                         </p>
-                        <span
-                          className="text-xs font-bold text-primary opacity-0 group-hover:opacity-100 transition-opacity"
-                          style={{ fontFamily: font }}
-                        >
-                          {t.watchNow}
-                        </span>
                       </div>
                       {e.course.upcomingExamAt && (
                         <div className="mt-2">
@@ -1004,7 +974,7 @@ export default function StudentDashboardPage() {
               )}
             </SectionCard>
 
-            {/* Exam Results */}
+            {/* Exam Results — view-only, no navigation into answer review */}
             <SectionCard title={t.exams} icon={ClipboardList}>
               {examAttempts.length === 0 ? (
                 <div className="flex flex-col items-center py-10 gap-2">
@@ -1015,71 +985,51 @@ export default function StudentDashboardPage() {
                 </div>
               ) : (
                 <div className="flex flex-col gap-3">
-                  {examAttempts.map((attempt) => {
-                    // Only submitted attempts have anything to review —
-                    // an attempt still in progress has no answers page yet.
-                    const isClickable = Boolean(attempt.submittedAt);
-                    return (
-                      <div
-                        key={attempt.id}
-                        onClick={
-                          isClickable
-                            ? () => router.push(`/student-dashboard/attempts/${attempt.id}`)
-                            : undefined
-                        }
-                        className={`p-4 rounded-xl border border-border bg-background transition-all group ${
-                          isClickable
-                            ? 'cursor-pointer hover:bg-muted/20 hover:border-primary/40'
-                            : ''
-                        }`}
-                      >
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="min-w-0">
-                            <p
-                              className="font-semibold text-foreground text-sm truncate"
-                              style={{ fontFamily: font }}
-                            >
-                              {attempt.exam.lesson.title}
-                            </p>
-                            <p
-                              className="text-xs text-muted-foreground mt-0.5 truncate"
-                              style={{ fontFamily: font }}
-                            >
-                              {attempt.exam.lesson.course.name}
-                            </p>
-                          </div>
-                          {examStatusBadge(attempt)}
+                  {examAttempts.map((attempt) => (
+                    <div
+                      key={attempt.id}
+                      className="p-4 rounded-xl border border-border bg-background"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p
+                            className="font-semibold text-foreground text-sm truncate"
+                            style={{ fontFamily: font }}
+                          >
+                            {attempt.exam.lesson.title}
+                          </p>
+                          <p
+                            className="text-xs text-muted-foreground mt-0.5 truncate"
+                            style={{ fontFamily: font }}
+                          >
+                            {attempt.exam.lesson.course.name}
+                          </p>
                         </div>
-                        {attempt.submittedAt && (
-                          <div className="flex items-center justify-between mt-2">
-                            <div className="flex items-center gap-4 text-xs text-muted-foreground">
-                              <span style={{ fontFamily: font }}>
-                                {t.score}:{' '}
-                                <span className="font-bold text-foreground">
-                                  {attempt.score ?? '—'}
-                                </span>
+                        {examStatusBadge(attempt)}
+                      </div>
+                      {attempt.submittedAt && (
+                        <div className="flex items-center justify-between mt-2">
+                          <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                            <span style={{ fontFamily: font }}>
+                              {t.score}:{' '}
+                              <span className="font-bold text-foreground">
+                                {attempt.score ?? '—'}
                               </span>
-                              <span style={{ fontFamily: font }}>
-                                {t.passingScore}:{' '}
-                                <span className="font-bold text-foreground">
-                                  {attempt.exam.passingScore}
-                                </span>
+                            </span>
+                            <span style={{ fontFamily: font }}>
+                              {t.passingScore}:{' '}
+                              <span className="font-bold text-foreground">
+                                {attempt.exam.passingScore}
                               </span>
-                              <span dir="ltr">
-                                {new Date(attempt.submittedAt).toLocaleDateString('en-EG')}
-                              </span>
-                            </div>
-                            <span
-                              className="text-xs font-bold text-primary opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-0.5 flex-shrink-0"
-                              style={{ fontFamily: font }}
-                            >
-                              {t.viewAnswers}
+                            </span>
+                            <span dir="ltr">
+                              {new Date(attempt.submittedAt).toLocaleDateString('en-EG')}
                             </span>
                           </div>
-                        )}
-                      </div>
-                    );
-                  })}
+                        </div>
+                      )}
+                    </div>
+                  ))}
                 </div>
               )}
             </SectionCard>
@@ -1088,13 +1038,6 @@ export default function StudentDashboardPage() {
       </main>
 
       <Footer lang={lang} />
-
-      <EditProfileModal
-        open={editOpen}
-        onClose={() => setEditOpen(false)}
-        lang={lang}
-        profile={profile}
-      />
     </div>
   );
 }

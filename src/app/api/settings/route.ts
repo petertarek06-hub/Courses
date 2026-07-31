@@ -20,6 +20,11 @@ export async function GET() {
       youtubeUrl: true,
       whatsappButtonLabel: true,
       copyrightText: true,
+      // ── Footer special offer ──
+      offerEnabled: true,
+      offerTitle: true,
+      offerText: true,
+      offerImageUrl: true,
     },
   });
 
@@ -36,6 +41,11 @@ export async function GET() {
       youtubeUrl: null,
       whatsappButtonLabel: null,
       copyrightText: null,
+      // ── Footer special offer ──
+      offerEnabled: false,
+      offerTitle: null,
+      offerText: null,
+      offerImageUrl: null,
     }
   );
 }

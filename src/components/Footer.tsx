@@ -22,6 +22,11 @@ interface CenterInfo {
   youtubeUrl: string | null;
   whatsappButtonLabel: string | null;
   copyrightText: string | null;
+  // ── Footer special offer ──
+  offerEnabled: boolean;
+  offerTitle: string | null;
+  offerText: string | null;
+  offerImageUrl: string | null;
 }
 
 // Fallback values shown until /api/settings resolves (and if a field was
@@ -38,6 +43,11 @@ const DEFAULT_CENTER_INFO: CenterInfo = {
   youtubeUrl: null,
   whatsappButtonLabel: null,
   copyrightText: null,
+  // ── Footer special offer ── off by default until an admin turns it on
+  offerEnabled: false,
+  offerTitle: null,
+  offerText: null,
+  offerImageUrl: null,
 };
 
 // WhatsApp icon SVG
@@ -103,6 +113,12 @@ export default function Footer({ lang }: FooterProps) {
 
   const whatsappNumber = center.whatsappNumber ?? DEFAULT_CENTER_INFO.whatsappNumber;
   const whatsappHref = whatsappNumber ? `https://wa.me/2${whatsappNumber}` : '#';
+
+  // Only render the offer banner once the admin has switched it on AND
+  // there's actually something to show — avoids an empty/broken-looking card.
+  const showOffer =
+    center.offerEnabled && (center.offerTitle || center.offerText || center.offerImageUrl);
+
   return (
     <footer
       className="bg-foreground text-white mt-auto"
@@ -110,6 +126,28 @@ export default function Footer({ lang }: FooterProps) {
       style={{ fontFamily: isRtl ? 'var(--font-cairo)' : undefined }}
     >
       <div className="max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-8 xl:px-10 py-12">
+        {/* Special offer banner */}
+        {showOffer && (
+          <div className="mb-10 rounded-2xl bg-white/[0.06] border border-white/10 overflow-hidden flex flex-col sm:flex-row items-center gap-5 p-5 sm:p-6">
+            {center.offerImageUrl && (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={center.offerImageUrl}
+                alt={center.offerTitle || 'Special offer'}
+                className="w-full sm:w-36 h-36 object-cover rounded-xl flex-shrink-0"
+              />
+            )}
+            <div className="text-center sm:text-start">
+              {center.offerTitle && (
+                <h3 className="text-lg font-extrabold text-white mb-1">{center.offerTitle}</h3>
+              )}
+              {center.offerText && (
+                <p className="text-white/75 text-sm leading-relaxed">{center.offerText}</p>
+              )}
+            </div>
+          </div>
+        )}
+
         <div className="grid grid-cols-1 md:grid-cols-3 gap-10">
           {/* Brand */}
           <div>

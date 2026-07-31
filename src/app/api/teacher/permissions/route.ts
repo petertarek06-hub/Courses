@@ -11,11 +11,6 @@ const DEFAULT_PERMISSIONS = {
   canReorder: true,
 };
 
-// ── GET ─────────────────────────────────────────────────────────
-// A teacher's own permissions, used by the teacher dashboard to gate
-// add/edit/reorder actions client-side. Falls back to defaults when no
-// TeacherPermission row exists yet (e.g. teacher created before this
-// feature shipped, or an admin has never touched their permissions).
 export async function GET() {
   const user = await getAuthUser();
   if (!user || user.role !== 'teacher')

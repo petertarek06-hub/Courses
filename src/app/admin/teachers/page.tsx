@@ -1031,6 +1031,7 @@ export default function AdminTeachersPage() {
       )}
 
       {/* ── Permissions Modal - أصغر على الموبايل ── */}
+      {/* ── Permissions Modal - أصغر على الموبايل ── */}
       {permTeacher && (
         <Modal
           onClose={() => setPermTeacher(null)}
@@ -1044,6 +1045,7 @@ export default function AdminTeachersPage() {
           >
             {t.permissionsDesc}
           </p>
+
           <div className="flex flex-col gap-1.5 sm:gap-3 mb-2">
             {(
               [
@@ -1066,18 +1068,20 @@ export default function AdminTeachersPage() {
                 </span>
                 <div
                   onClick={() => setPermissions((prev) => ({ ...prev, [key]: !prev[key] }))}
-                  className={`relative w-9 sm:w-11 h-4.5 sm:h-6 rounded-full transition-colors duration-200 cursor-pointer flex-shrink-0 ${
-                    permissions[key] ? 'bg-primary' : 'bg-muted-foreground/30'
+                  className={`relative w-9 sm:w-11 h-5 sm:h-6 rounded-full transition-all duration-200 cursor-pointer flex-shrink-0 ${
+                    permissions[key]
+                      ? 'bg-primary shadow-lg shadow-primary/30'
+                      : 'bg-gray-300 dark:bg-gray-600 hover:bg-gray-400 dark:hover:bg-gray-500'
                   }`}
                 >
                   <span
-                    className={`absolute top-0.5 w-3.5 sm:w-5 h-3.5 sm:h-5 bg-white rounded-full shadow transition-all duration-200 ${
+                    className={`absolute top-0.5 w-4 sm:w-5 h-4 sm:h-5 bg-white rounded-full shadow-md transition-all duration-200 ${
                       permissions[key]
                         ? isRtl
                           ? 'right-0.5'
-                          : 'left-[18px] sm:left-5'
+                          : 'left-[18px] sm:left-[22px]'
                         : isRtl
-                          ? 'right-[18px]'
+                          ? 'right-[18px] sm:right-[22px]'
                           : 'left-0.5'
                     }`}
                   />
@@ -1110,7 +1114,6 @@ export default function AdminTeachersPage() {
           </div>
         </Modal>
       )}
-
       {/* ── Delete Modal - أصغر على الموبايل ── */}
       {deleteTeacher && (
         <Modal onClose={() => setDeleteTeacher(null)} title={t.delete} font={font} isRtl={isRtl}>

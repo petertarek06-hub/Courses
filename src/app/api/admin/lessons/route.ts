@@ -3,9 +3,6 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { getAuthUser, hasAdminAccess, isAdmin } from '@/lib/auth';
 
-// Teachers, admins, and assistants can all view/manage lessons.
-// Deletion is gated separately (teachers on their own courses, or admin) —
-// see the extra check inside DELETE below.
 async function authorize(courseId?: number) {
   const user = await getAuthUser();
   if (!user)
@@ -24,7 +21,33 @@ async function authorize(courseId?: number) {
   return { user, error: null };
 }
 
+async function validateUnit(unitId: number, courseId: number): Promise<NextResponse | null> {
+  const unit = await prisma.unit.findUnique({
+    where: { id: unitId },
+    select: { courseId: true },
+  });
+  if (!unit || unit.courseId !== courseId) {
+    return NextResponse.json({ error: 'Unit does not belong to this course' }, { status: 400 });
+  }
+  return null;
+}
+
+// Next order is a single shared sequence per unit — videos and exams are
+// interleaved in whatever order the admin builds them, matching the
+// Course → Unit → [Lesson, Lesson, ...] tree the admin sees on screen.
+async function nextOrderInUnit(unitId: number): Promise<number> {
+  const maxLesson = await prisma.lesson.findFirst({
+    where: { unitId },
+    orderBy: { order: 'desc' },
+    select: { order: true },
+  });
+  return (maxLesson?.order ?? 0) + 1;
+}
+
 // ── GET /api/admin/lessons?courseId=X ─────────────────────────
+// Kept for callers that want a flat list across all units (e.g. student-
+// facing progress calculations). The admin UI itself now gets lessons
+// nested under each unit via GET /api/admin/units.
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const courseId = Number(searchParams.get('courseId'));
@@ -33,20 +56,15 @@ export async function GET(req: NextRequest) {
   const { error } = await authorize(courseId);
   if (error) return error;
 
-  // Note: intentionally NOT filtering examQuestions by isVisible here.
-  // Admin/teacher management views should still see hidden (soft-removed)
-  // questions so they understand why a question they tried to delete is
-  // still occupying a row — the frontend can use `isVisible` to gray it
-  // out / label it "removed". Students never hit this endpoint.
   const lessons = await prisma.lesson.findMany({
     where: { courseId },
-    orderBy: { order: 'asc' },
+    orderBy: [{ unitId: 'asc' }, { order: 'asc' }],
     include: {
       video: true,
       exam: {
         include: {
           examQuestions: {
-            include: { question: true },
+            include: { question: { include: { topic: true } } },
             orderBy: { order: 'asc' },
           },
         },
@@ -58,30 +76,33 @@ export async function GET(req: NextRequest) {
 }
 
 // ── POST /api/admin/lessons ────────────────────────────────────
-// Body for video: { courseId, title, type:"video", vimeoId, description? }
-// Body for exam:  { courseId, title, type:"exam", durationMinutes?, passingScore?, scheduledAt? }
-//   scheduledAt: ISO-8601 string or null/undefined = immediately available
+// Body for video: { courseId, unitId, title, type:"video", vimeoId, description? }
+// Body for exam:  { courseId, unitId, title, type:"exam", durationMinutes?, passingScore?, scheduledAt? }
+//   unitId is required for BOTH types — every lesson lives inside a unit.
+//   scheduledAt: ISO-8601 string or null/undefined = immediately available.
+//   Order is a single sequence shared by videos and exams within the unit.
 export async function POST(req: NextRequest) {
   const body = await req.json();
-  const { courseId, title, type } = body;
+  const { courseId, unitId, title, type } = body;
 
-  if (!courseId || !title || !type)
-    return NextResponse.json({ error: 'courseId, title, type are required' }, { status: 400 });
+  if (!courseId || !unitId || !title || !type)
+    return NextResponse.json(
+      { error: 'courseId, unitId, title, type are required' },
+      { status: 400 }
+    );
 
   const { error } = await authorize(Number(courseId));
   if (error) return error;
 
-  const maxLesson = await prisma.lesson.findFirst({
-    where: { courseId: Number(courseId) },
-    orderBy: { order: 'desc' },
-    select: { order: true },
-  });
-  const nextOrder = (maxLesson?.order ?? 0) + 1;
+  const unitError = await validateUnit(Number(unitId), Number(courseId));
+  if (unitError) return unitError;
 
   if (type === 'video') {
     const { vimeoId, description } = body;
     if (!vimeoId)
       return NextResponse.json({ error: 'vimeoId required for video lessons' }, { status: 400 });
+
+    const nextOrder = await nextOrderInUnit(Number(unitId));
 
     const lesson = await prisma.lesson.create({
       data: {
@@ -89,6 +110,7 @@ export async function POST(req: NextRequest) {
         type: 'video',
         order: nextOrder,
         courseId: Number(courseId),
+        unitId: Number(unitId),
         video: {
           create: {
             vimeoId: String(vimeoId).trim(),
@@ -104,12 +126,13 @@ export async function POST(req: NextRequest) {
   if (type === 'exam') {
     const { durationMinutes, passingScore, scheduledAt } = body;
 
-    // Parse scheduledAt — accept ISO string or null/undefined
     const scheduledDate: Date | null =
       scheduledAt && typeof scheduledAt === 'string' ? new Date(scheduledAt) : null;
 
     if (scheduledDate && isNaN(scheduledDate.getTime()))
       return NextResponse.json({ error: 'Invalid scheduledAt date' }, { status: 400 });
+
+    const nextOrder = await nextOrderInUnit(Number(unitId));
 
     const lesson = await prisma.lesson.create({
       data: {
@@ -117,6 +140,7 @@ export async function POST(req: NextRequest) {
         type: 'exam',
         order: nextOrder,
         courseId: Number(courseId),
+        unitId: Number(unitId),
         exam: {
           create: {
             durationMinutes: durationMinutes ? Number(durationMinutes) : null,
@@ -134,10 +158,13 @@ export async function POST(req: NextRequest) {
 }
 
 // ── PATCH /api/admin/lessons ───────────────────────────────────
-// action: "updateVideo"              { id, title, vimeoId, description? }
-// action: "updateExam"               { id, title, durationMinutes?, passingScore?, scheduledAt? }
+// action: "updateVideo"              { id, title, vimeoId, description?, unitId? }
+// action: "updateExam"               { id, title, durationMinutes?, passingScore?, scheduledAt?, unitId? }
+//   Passing a different unitId moves the lesson and appends it to that unit's sequence.
 // action: "toggleVisibility"         { id }
 // action: "reorder"                  { id, direction:"up"|"down" }
+//   Swaps with the adjacent lesson in the SAME unit — videos and exams
+//   share one ordered list now, so this is type-agnostic.
 // action: "addExamQuestions"         { id(lessonId), questionIds:[...] }
 // action: "removeExamQuestion"       { id(lessonId), examQuestionId }
 // action: "reorderExamQuestion"      { id(lessonId), examQuestionId, direction }
@@ -150,20 +177,28 @@ export async function PATCH(req: NextRequest) {
 
   const lesson = await prisma.lesson.findUnique({
     where: { id: Number(id) },
-    select: { courseId: true },
+    select: { courseId: true, unitId: true, type: true, order: true },
   });
   if (!lesson) return NextResponse.json({ error: 'Lesson not found' }, { status: 404 });
 
   const { error } = await authorize(lesson.courseId);
   if (error) return error;
 
-  // ── updateVideo ──────────────────────────────────────────────
   if (action === 'updateVideo') {
-    const { title, vimeoId, description } = body;
+    const { title, vimeoId, description, unitId } = body;
     if (!title || !vimeoId)
       return NextResponse.json({ error: 'title and vimeoId required' }, { status: 400 });
 
-    await prisma.lesson.update({ where: { id: Number(id) }, data: { title } });
+    const data: { title: string; unitId?: number; order?: number } = { title };
+
+    if (unitId && Number(unitId) !== lesson.unitId) {
+      const unitError = await validateUnit(Number(unitId), lesson.courseId);
+      if (unitError) return unitError;
+      data.unitId = Number(unitId);
+      data.order = await nextOrderInUnit(Number(unitId));
+    }
+
+    await prisma.lesson.update({ where: { id: Number(id) }, data });
     await prisma.video.upsert({
       where: { lessonId: Number(id) },
       create: {
@@ -179,28 +214,34 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ ok: true });
   }
 
-  // ── updateExam ───────────────────────────────────────────────
   if (action === 'updateExam') {
-    const { title, durationMinutes, passingScore, scheduledAt } = body;
+    const { title, durationMinutes, passingScore, scheduledAt, unitId } = body;
     if (!title) return NextResponse.json({ error: 'title required' }, { status: 400 });
 
-    // Parse scheduledAt — null means "clear the schedule" (always available)
     let scheduledDate: Date | null = null;
     if (scheduledAt === null || scheduledAt === '') {
-      scheduledDate = null; // explicitly cleared
+      scheduledDate = null;
     } else if (scheduledAt && typeof scheduledAt === 'string') {
       scheduledDate = new Date(scheduledAt);
       if (isNaN(scheduledDate.getTime()))
         return NextResponse.json({ error: 'Invalid scheduledAt date' }, { status: 400 });
     }
 
-    await prisma.lesson.update({ where: { id: Number(id) }, data: { title } });
+    const data: { title: string; unitId?: number; order?: number } = { title };
+
+    if (unitId && Number(unitId) !== lesson.unitId) {
+      const unitError = await validateUnit(Number(unitId), lesson.courseId);
+      if (unitError) return unitError;
+      data.unitId = Number(unitId);
+      data.order = await nextOrderInUnit(Number(unitId));
+    }
+
+    await prisma.lesson.update({ where: { id: Number(id) }, data });
     await prisma.exam.updateMany({
       where: { lessonId: Number(id) },
       data: {
         durationMinutes: durationMinutes ? Number(durationMinutes) : null,
         passingScore: passingScore ? Number(passingScore) : 50,
-        // Only update scheduledAt when explicitly provided in the request body
         ...(Object.prototype.hasOwnProperty.call(body, 'scheduledAt') && {
           scheduledAt: scheduledDate,
         }),
@@ -209,7 +250,6 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ ok: true });
   }
 
-  // ── toggleVisibility ─────────────────────────────────────────
   if (action === 'toggleVisibility') {
     const current = await prisma.lesson.findUnique({
       where: { id: Number(id) },
@@ -221,33 +261,20 @@ export async function PATCH(req: NextRequest) {
     });
     return NextResponse.json({ ok: true });
   }
-  // ── reorder ──────────────────────────────────────────────────
+
   if (action === 'reorder') {
     const { direction } = body;
-    const allLessons = await prisma.lesson.findMany({
-      where: { courseId: lesson.courseId },
+
+    // One shared, type-agnostic sequence per unit.
+    const group = await prisma.lesson.findMany({
+      where: { unitId: lesson.unitId },
       orderBy: { order: 'asc' },
-      select: {
-        id: true,
-        order: true,
-        type: true,
-        exam: { select: { scheduledAt: true } },
-      },
+      select: { id: true, order: true },
     });
-
-    // Scheduled exams are "independent" — they never gate or get gated by
-    // other lessons — so they reorder only among themselves, never
-    // swapping positions with a main-sequence lesson.
-    const isScheduledExam = (l: (typeof allLessons)[number]) =>
-      l.type === 'exam' && l.exam?.scheduledAt != null;
-
-    const current = allLessons.find((l) => l.id === Number(id));
-    if (!current) return NextResponse.json({ error: 'Lesson not found' }, { status: 404 });
-
-    const group = allLessons.filter((l) => isScheduledExam(l) === isScheduledExam(current));
-    const idx = group.findIndex((l) => l.id === current.id);
+    const idx = group.findIndex((l) => l.id === Number(id));
     const swapIdx = direction === 'up' ? idx - 1 : idx + 1;
-    if (swapIdx < 0 || swapIdx >= group.length) return NextResponse.json({ ok: true });
+    if (idx === -1 || swapIdx < 0 || swapIdx >= group.length)
+      return NextResponse.json({ ok: true });
 
     const a = group[idx];
     const b = group[swapIdx];
@@ -257,7 +284,7 @@ export async function PATCH(req: NextRequest) {
     ]);
     return NextResponse.json({ ok: true });
   }
-  // ── addExamQuestions ─────────────────────────────────────────
+
   if (action === 'addExamQuestions') {
     const { questionIds } = body as { questionIds: number[] };
     if (!questionIds?.length)
@@ -276,9 +303,6 @@ export async function PATCH(req: NextRequest) {
     });
     let nextOrder = (maxEq?.order ?? 0) + 1;
 
-    // NOTE: this includes hidden (soft-removed) rows too, so re-adding a
-    // question that was previously hidden is a no-op here rather than a
-    // duplicate — see the "unhide" note below for how to surface that.
     const existing = await prisma.examQuestion.findMany({
       where: { examId: exam.id },
       select: { questionId: true, isVisible: true },
@@ -301,10 +325,6 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ ok: true, added: toAdd.length, unhidden: toUnhide.length });
   }
 
-  // ── removeExamQuestion ───────────────────────────────────────
-  // If students have already submitted answers for this question, deleting
-  // the row outright would violate the FK on attempt_answers (and destroy
-  // graded history). So: hard-delete only when it's safe, otherwise hide it.
   if (action === 'removeExamQuestion') {
     const { examQuestionId } = body;
     if (!examQuestionId)
@@ -331,7 +351,6 @@ export async function PATCH(req: NextRequest) {
     });
   }
 
-  // ── reorderExamQuestion ──────────────────────────────────────
   if (action === 'reorderExamQuestion') {
     const { examQuestionId, direction } = body;
     const exam = await prisma.exam.findUnique({
@@ -358,7 +377,6 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ ok: true });
   }
 
-  // ── updateExamQuestionMark ───────────────────────────────────
   if (action === 'updateExamQuestionMark') {
     const { examQuestionId, mark } = body;
     const safeMark = Number(mark);
@@ -388,12 +406,6 @@ export async function DELETE(req: NextRequest) {
 
   const { user, error } = await authorize(lesson.courseId);
   if (error) return error;
-
-  // Deletion itself is off-limits for assistants specifically. Teachers
-  // deleting lessons on their own courses, and real admins deleting
-  // anything, are both still allowed — `authorize` above already confirmed
-  // the teacher owns this course, so we only need to additionally reject
-  // the assistant role here.
   if (user!.role !== 'teacher' && !isAdmin(user!.role))
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
 
