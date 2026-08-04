@@ -26,7 +26,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const body = await req.json();
-  const { name, description, subject, academicYear, price, teacherId } = body;
+  const { name, description, subject, academicYear, price, subscriptionPrice, teacherId } = body;
 
   if (!name || !subject || !academicYear || !teacherId)
     return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
@@ -43,6 +43,7 @@ export async function POST(req: NextRequest) {
       subject,
       academicYear,
       price: Number(price) || 0,
+      subscriptionPrice: subscriptionPrice ? Number(subscriptionPrice) : null,
       teacherId: Number(teacherId),
     },
     include: {
@@ -74,7 +75,7 @@ export async function PATCH(req: NextRequest) {
   }
 
   if (action === 'update') {
-    const { name, description, subject } = fields;
+    const { name, description, subject, subscriptionPrice } = fields;
     await prisma.course.update({
       where: { id },
       data: {
@@ -83,6 +84,7 @@ export async function PATCH(req: NextRequest) {
         subject,
         academicYear: fields.academicYear,
         price: Number(fields.price) || 0,
+        subscriptionPrice: subscriptionPrice ? Number(subscriptionPrice) : null,
         teacherId: Number(fields.teacherId),
       },
     });

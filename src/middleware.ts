@@ -82,7 +82,18 @@ export async function middleware(req: NextRequest) {
 
   if (authRoutes.some((r) => pathname.startsWith(r))) {
     if (user) {
-      return NextResponse.redirect(new URL('/', req.url));
+      // Redirect authenticated users based on their role
+      if (user.role === 'admin' || user.role === 'assistant') {
+        return NextResponse.redirect(new URL('/admin', req.url));
+      } else if (user.role === 'teacher') {
+        return NextResponse.redirect(new URL('/teacher-dashboard', req.url));
+      } else if (user.role === 'student') {
+        return NextResponse.redirect(new URL('/student-dashboard', req.url));
+      } else if (user.role === 'guardian') {
+        return NextResponse.redirect(new URL('/guardian-dashboard', req.url));
+      } else {
+        return NextResponse.redirect(new URL('/', req.url));
+      }
     }
   }
 

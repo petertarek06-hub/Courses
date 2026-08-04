@@ -6,7 +6,13 @@ import AdminShell from './Adminshell';
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
   const user = await getAuthUser();
 
-  if (!user || !hasAdminAccess(user.role)) {
+  // Fallback: if no user, redirect to login (middleware should handle this, but this is a safety net)
+  if (!user) {
+    redirect('/sign-up-login-screen');
+  }
+
+  // Role-based access check
+  if (!hasAdminAccess(user.role)) {
     redirect('/');
   }
 

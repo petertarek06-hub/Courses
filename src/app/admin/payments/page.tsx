@@ -27,7 +27,7 @@ interface PendingTx {
   senderPhone: string | null;
   proofImageUrl: string | null;
   createdAt: string;
-  student: { id: number; fullName: string; phone: string; balance: number };
+  student: { id: number; fullName: string; phone: string; balance: number; isActive: boolean };
 }
 
 interface HistoryItem {
@@ -43,6 +43,14 @@ interface HistoryItem {
   notes: string | null;
   date: string;
   student: { id: number; fullName: string; phone: string };
+}
+
+interface NegativeBalanceStudent {
+  id: number;
+  fullName: string;
+  phone: string;
+  balance: number;
+  isActive: boolean;
 }
 
 const content = {
@@ -80,6 +88,14 @@ const content = {
     viewReceipt: 'عرض الإيصال',
     senderPhone: 'رقم المُرسل',
     receiptTitle: 'إيصال التحويل',
+    negativeBalanceTitle: 'طلاب برصيد سلبي',
+    noNegativeBalance: 'لا يوجد طلاب برصيد سلبي',
+    suspend: 'تعليق الحساب',
+    unsuspend: 'تفعيل الحساب',
+    suspended: 'معطل',
+    active: 'نشط',
+    suspendOk: 'تم تعليق الحساب',
+    unsuspendOk: 'تم تفعيل الحساب',
   },
   en: {
     title: 'Balance Top-Up Requests',
@@ -115,6 +131,14 @@ const content = {
     viewReceipt: 'View receipt',
     senderPhone: 'Sender phone',
     receiptTitle: 'Transfer Receipt',
+    negativeBalanceTitle: 'Students with Negative Balance',
+    noNegativeBalance: 'No students with negative balance',
+    suspend: 'Suspend Account',
+    unsuspend: 'Activate Account',
+    suspended: 'Suspended',
+    active: 'Active',
+    suspendOk: 'Account suspended',
+    unsuspendOk: 'Account activated',
   },
 };
 
@@ -140,21 +164,24 @@ export default function AdminPaymentsPage() {
 
   const [requests, setRequests] = useState<PendingTx[]>([]);
   const [history, setHistory] = useState<HistoryItem[]>([]);
+  const [negativeBalanceStudents, setNegativeBalanceStudents] = useState<NegativeBalanceStudent[]>([]);
   const [loading, setLoading] = useState(true);
   const [processing, setProcessing] = useState<number | null>(null);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editAmount, setEditAmount] = useState('');
   const [viewingImage, setViewingImage] = useState<string | null>(null);
+  const [suspendingId, setSuspendingId] = useState<number | null>(null);
 
   const getBorderDirection = () => (isRtl ? 'border-l border-border' : 'border-r border-border');
 
   const fetchRequests = () => {
     setLoading(true);
     fetch('/api/admin/payments')
-      .then((r) => (r.ok ? r.json() : { pending: [], history: [] }))
+      .then((r) => (r.ok ? r.json() : { pending: [], history: [], negativeBalanceStudents: [] }))
       .then((data) => {
         setRequests(data.pending ?? []);
         setHistory(data.history ?? []);
+        setNegativeBalanceStudents(data.negativeBalanceStudents ?? []);
       })
       .finally(() => setLoading(false));
   };
@@ -203,6 +230,26 @@ export default function AdminPaymentsPage() {
       toast.error(t.errorMsg);
     }
     setProcessing(null);
+  };
+
+  const handleSuspend = async (studentId: number, action: 'suspend' | 'unsuspend') => {
+    setSuspendingId(studentId);
+    try {
+      const res = await fetch('/api/admin/payments', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ studentId, action }),
+      });
+      if (res.ok) {
+        toast.success(action === 'suspend' ? t.suspendOk : t.unsuspendOk);
+        fetchRequests();
+      } else {
+        toast.error(t.errorMsg);
+      }
+    } catch {
+      toast.error(t.errorMsg);
+    }
+    setSuspendingId(null);
   };
 
   return (
@@ -408,6 +455,117 @@ export default function AdminPaymentsPage() {
             );
           })}
         </div>
+      )}
+
+      {/* ── Negative Balance Students ───────────────────────── */}
+      <div className="flex items-center gap-2 mb-3 sm:mb-4 mt-8 sm:mt-10">
+        <AlertCircle size={16} className="text-red-500 sm:hidden" />
+        <AlertCircle size={18} className="text-red-500 hidden sm:block" />
+        <h2
+          className="text-base sm:text-lg font-extrabold text-foreground"
+          style={{ fontFamily: font }}
+        >
+          {t.negativeBalanceTitle}
+        </h2>
+      </div>
+
+      {!loading && negativeBalanceStudents.length === 0 ? (
+        <div className="flex flex-col items-center py-12 sm:py-16 gap-2 sm:gap-3">
+          <CheckCircle2 size={32} className="text-green-400/50 sm:hidden" />
+          <CheckCircle2 size={40} className="text-green-400/50 hidden sm:block" />
+          <p className="text-muted-foreground text-xs sm:text-sm" style={{ fontFamily: font }}>
+            {t.noNegativeBalance}
+          </p>
+        </div>
+      ) : (
+        !loading && (
+          <div className="bg-card rounded-xl sm:rounded-2xl border border-border card-shadow overflow-hidden mb-8 sm:mb-10">
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs sm:text-sm border-collapse">
+                <thead className="bg-muted">
+                  <tr>
+                    {[t.student, t.phone, t.balance, t.statusLabel, ''].map((col, i, arr) => (
+                      <th
+                        key={col}
+                        className={`px-2 sm:px-4 py-2 sm:py-3 text-center border-b border-border text-[10px] sm:text-xs font-bold text-muted-foreground uppercase tracking-wide whitespace-nowrap ${
+                          i < arr.length - 1 ? getBorderDirection() : ''
+                        }`}
+                        style={{ fontFamily: font }}
+                      >
+                        {col}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {negativeBalanceStudents.map((student) => (
+                    <tr
+                      key={student.id}
+                      className="odd:bg-background even:bg-muted/10 hover:bg-muted/30 transition-colors"
+                    >
+                      <td
+                        className={`px-2 sm:px-4 py-2 sm:py-3 text-center align-middle border-b border-border ${getBorderDirection()}`}
+                      >
+                        <p
+                          className="font-semibold text-foreground whitespace-nowrap"
+                          style={{ fontFamily: font }}
+                        >
+                          {student.fullName}
+                        </p>
+                      </td>
+                      <td
+                        className={`px-2 sm:px-4 py-2 sm:py-3 text-center align-middle border-b border-border ${getBorderDirection()} text-muted-foreground whitespace-nowrap`}
+                        dir="ltr"
+                      >
+                        {student.phone}
+                      </td>
+                      <td
+                        className={`px-2 sm:px-4 py-2 sm:py-3 text-center align-middle border-b border-border ${getBorderDirection()} font-bold whitespace-nowrap text-red-500`}
+                        dir="ltr"
+                      >
+                        {student.balance} {t.egp}
+                      </td>
+                      <td
+                        className={`px-2 sm:px-4 py-2 sm:py-3 text-center align-middle border-b border-border ${getBorderDirection()}`}
+                      >
+                        <span
+                          className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] sm:text-xs font-bold whitespace-nowrap ${
+                            student.isActive
+                              ? 'bg-green-500/10 text-green-600'
+                              : 'bg-red-500/10 text-red-500'
+                          }`}
+                          style={{ fontFamily: font }}
+                        >
+                          {student.isActive ? t.active : t.suspended}
+                        </span>
+                      </td>
+                      <td className="px-2 sm:px-4 py-2 sm:py-3 text-center align-middle border-b border-border">
+                        <button
+                          onClick={() => handleSuspend(student.id, student.isActive ? 'suspend' : 'unsuspend')}
+                          disabled={suspendingId === student.id}
+                          className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all disabled:opacity-50 ${
+                            student.isActive
+                              ? 'bg-red-500 text-white hover:bg-red-600'
+                              : 'bg-green-500 text-white hover:bg-green-600'
+                          }`}
+                          style={{ fontFamily: font }}
+                        >
+                          {suspendingId === student.id ? (
+                            <Loader2 size={12} className="animate-spin inline" />
+                          ) : student.isActive ? (
+                            t.suspend
+                          ) : (
+                            t.unsuspend
+                          )}
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )
       )}
 
       {/* ── History ────────────────────────────────────────── */}

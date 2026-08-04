@@ -65,7 +65,6 @@ export async function getAuthUser(): Promise<JwtPayload | null> {
         });
 
   if (!exists) {
-    cookieStore.delete(COOKIE_NAME);
     return null;
   }
 

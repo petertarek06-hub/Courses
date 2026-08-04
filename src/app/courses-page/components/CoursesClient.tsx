@@ -75,6 +75,7 @@ interface RawCourse {
   subject: string;
   academicYear: string;
   price: number;
+  subscriptionPrice: number | null;
   isEnrolled: boolean;
   teacher: {
     id: number;
@@ -101,6 +102,7 @@ export interface Teacher {
   rating: null;
   color: string;
   price: number;
+  subscriptionPrice: number | null;
   isEnrolled: boolean;
 }
 function normalise(course: RawCourse): Teacher {
@@ -129,6 +131,7 @@ function normalise(course: RawCourse): Teacher {
     rating: null,
     color: subjectColorMap[subjectKey] ?? defaultColor,
     price: course.price,
+    subscriptionPrice: course.subscriptionPrice,
     isEnrolled: course.isEnrolled,
   };
 }

@@ -31,6 +31,7 @@ interface Course {
   subject: string;
   academicYear: string;
   price: number;
+  subscriptionPrice: number | null;
   isVisible: boolean;
   createdAt: string;
   teacher: Teacher;
@@ -41,6 +42,7 @@ type CourseForm = {
   subject: string;
   academicYear: string;
   price: string;
+  subscriptionPrice: string;
   teacherId: string;
 };
 const emptyForm: CourseForm = {
@@ -49,6 +51,7 @@ const emptyForm: CourseForm = {
   subject: '',
   academicYear: '',
   price: '0',
+  subscriptionPrice: '',
   teacherId: '',
 };
 
@@ -141,6 +144,7 @@ const content = {
     teacher: 'المدرس',
     grade: 'الصف',
     price: 'السعر',
+    subscriptionPrice: 'سعر الاشتراك الشهري',
     status: 'الحالة',
     actions: 'إجراءات',
     visible: 'مرئي',
@@ -161,7 +165,8 @@ const content = {
     subjectLabel: 'المادة',
     academicYear: 'الصف الدراسي',
     selectYear: 'اختر الصف',
-    priceLabel: 'السعر (ج.م)',
+    priceLabel: 'السعر الكامل (ج.م)',
+    subscriptionPriceLabel: 'سعر الاشتراك الشهري (ج.م) - اختياري',
     selectTeacher: 'اختر المدرس',
     teacherLabel: 'المدرس',
     save: 'حفظ',
@@ -176,6 +181,7 @@ const content = {
     missingFields: 'يرجى تعبئة جميع الحقول المطلوبة',
     noTeachers: 'لا يوجد مدرسون — أضف مدرسًا أولاً',
     manageExams: 'الامتحانات والتصحيح',
+    subscriptionAvailable: 'اشتراك متاح',
   },
   en: {
     title: 'Courses',
@@ -186,6 +192,7 @@ const content = {
     teacher: 'Teacher',
     grade: 'Grade',
     price: 'Price',
+    subscriptionPrice: 'Monthly Subscription',
     status: 'Status',
     actions: 'Actions',
     visible: 'Visible',
@@ -206,7 +213,8 @@ const content = {
     subjectLabel: 'Subject',
     academicYear: 'Academic Year',
     selectYear: 'Select grade',
-    priceLabel: 'Price (EGP)',
+    priceLabel: 'Full Price (EGP)',
+    subscriptionPriceLabel: 'Monthly Subscription Price (EGP) - Optional',
     selectTeacher: 'Select Teacher',
     teacherLabel: 'Teacher',
     save: 'Save',
@@ -221,6 +229,7 @@ const content = {
     missingFields: 'Please fill all required fields',
     noTeachers: 'No teachers found — add a teacher first',
     manageExams: 'Exams & Grading',
+    subscriptionAvailable: 'Subscription Available',
   },
 };
 
@@ -291,6 +300,7 @@ export default function AdminCoursesPage() {
       subject: course.subject,
       academicYear: course.academicYear,
       price: String(course.price),
+      subscriptionPrice: course.subscriptionPrice ? String(course.subscriptionPrice) : '',
       teacherId: String(course.teacher.id),
     });
     setShowModal(true);
@@ -414,7 +424,7 @@ export default function AdminCoursesPage() {
           <table className="w-full text-xs sm:text-sm border-collapse">
             <thead className="bg-muted">
               <tr>
-                {[t.name, t.subject, t.teacher, t.grade, t.price, t.status, t.actions].map(
+                {[t.name, t.subject, t.teacher, t.grade, t.price, t.subscriptionPrice, t.status, t.actions].map(
                   (col, i, arr) => (
                     <th
                       key={col}
@@ -430,14 +440,14 @@ export default function AdminCoursesPage() {
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={7} className="py-10 sm:py-12 text-center">
+                  <td colSpan={8} className="py-10 sm:py-12 text-center">
                     <Loader2 size={24} className="animate-spin text-primary mx-auto" />
                   </td>
                 </tr>
               ) : error ? (
                 <tr>
                   <td
-                    colSpan={7}
+                    colSpan={8}
                     className="py-8 sm:py-10 text-center text-red-500 text-xs sm:text-sm"
                     style={{ fontFamily: font }}
                   >
@@ -447,7 +457,7 @@ export default function AdminCoursesPage() {
               ) : filtered.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={7}
+                    colSpan={8}
                     className="py-10 sm:py-16 text-center"
                     style={{ fontFamily: font }}
                   >
@@ -503,6 +513,21 @@ export default function AdminCoursesPage() {
                         </span>
                       ) : (
                         `${course.price} ${t.egp}`
+                      )}
+                    </td>
+                    {/* Subscription Price */}
+                    <td
+                      className={`px-2 sm:px-4 py-2 sm:py-3 text-center align-middle border-b border-border ${getBorderDirection()} font-semibold text-foreground`}
+                      dir="ltr"
+                    >
+                      {course.subscriptionPrice ? (
+                        <span className="text-primary font-bold" style={{ fontFamily: font }}>
+                          {course.subscriptionPrice} {t.egp}
+                        </span>
+                      ) : (
+                        <span className="text-muted-foreground text-xs" style={{ fontFamily: font }}>
+                          —
+                        </span>
                       )}
                     </td>
                     {/* Status */}
@@ -661,6 +686,17 @@ export default function AdminCoursesPage() {
                 onChange={(e) => f('price', e.target.value)}
                 className="input-field"
                 dir="ltr"
+              />
+            </Field>
+            <Field label={t.subscriptionPriceLabel} font={font}>
+              <input
+                type="number"
+                min="0"
+                value={form.subscriptionPrice}
+                onChange={(e) => f('subscriptionPrice', e.target.value)}
+                className="input-field"
+                dir="ltr"
+                placeholder="Optional"
               />
             </Field>
             <Field label={t.descLabel} font={font}>

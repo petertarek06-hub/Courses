@@ -25,6 +25,7 @@ model User {
 
   courses           Course[]           @relation("TeacherCourses")
   enrollments       Enrollment[]       @relation("StudentEnrollments")
+  subscriptions     Subscription[]     @relation("StudentSubscriptions")
   transactions      Transaction[]      @relation("StudentTransactions")
   topUpRequests     TopUpRequest[]     @relation("StudentTopUpRequests")
   processedTopUps   TopUpRequest[]     @relation("AdminTopUpRequests")
@@ -68,20 +69,20 @@ model TeacherPermission {
 
 // ── Courses ────────────────────────────────────────────────────
 model Course {
-  id           Int      @id @default(autoincrement())
-  name         String   @db.NVarChar(150)
-  description  String?  @db.NVarChar(500)
-  subject      String   @db.NVarChar(100)
-  academicYear String   @db.VarChar(20)
-  price        Float    @default(0)
-  isVisible    Boolean  @default(true)
-  createdAt    DateTime @default(now())
-
+  id                Int      @id @default(autoincrement())
+  name              String   @db.NVarChar(150)
+  description       String?  @db.NVarChar(500)
+  subject           String   @db.NVarChar(100)
+  academicYear      String   @db.VarChar(20)
+  price             Float    @default(0)
+  subscriptionPrice Float?   @db.Float
+  isVisible         Boolean  @default(true)
+  createdAt         DateTime @default(now())
   teacher   User? @relation("TeacherCourses", fields: [teacherId], references: [id], onDelete: SetNull, onUpdate: NoAction)
   teacherId Int?
-
   lessons         Lesson[]
   enrollments     Enrollment[]
+  subscriptions   Subscription[]
   transactions    Transaction[]
   bankQuestions   QuestionBank[]
   units           Unit[]
@@ -90,22 +91,35 @@ model Course {
 
   @@map("courses")
 }
-
-// ── Enrollments ────────────────────────────────────────────────
 model Enrollment {
-  id         Int      @id @default(autoincrement())
-  enrolledAt DateTime @default(now())
-
+  id              Int      @id @default(autoincrement())
+  enrolledAt      DateTime @default(now())
+  enrollmentType  String   @default("full") @db.VarChar(20) // "full" or "subscription"
   student   User @relation("StudentEnrollments", fields: [studentId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   studentId Int
-
   course   Course @relation(fields: [courseId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   courseId Int
-
+  subscription   Subscription? @relation("EnrollmentSubscription", fields: [subscriptionId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  subscriptionId Int? @unique
   @@unique([studentId, courseId])
   @@map("enrollments")
 }
 
+model Subscription {
+  id              Int      @id @default(autoincrement())
+  startDate       DateTime @default(now())
+  nextBillingDate  DateTime
+  isActive        Boolean  @default(true)
+  cancelledAt     DateTime?
+  createdAt       DateTime @default(now())
+  student   User @relation("StudentSubscriptions", fields: [studentId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  studentId Int
+  course   Course @relation(fields: [courseId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  courseId Int
+  enrollment   Enrollment? @relation("EnrollmentSubscription")
+  transactions Transaction[] @relation("SubscriptionTransactions")
+  @@map("subscriptions")
+}
 model Unit {
   id        Int      @id @default(autoincrement())
   title     String   @db.NVarChar(200)
@@ -421,6 +435,9 @@ model Transaction {
 
   topUpRequest   TopUpRequest? @relation(fields: [topUpRequestId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   topUpRequestId Int?
+
+  subscription   Subscription? @relation("SubscriptionTransactions", fields: [subscriptionId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  subscriptionId Int?
 
   @@map("transactions")
 }

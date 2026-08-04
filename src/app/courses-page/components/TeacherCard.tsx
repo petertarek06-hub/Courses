@@ -47,6 +47,8 @@ const content = {
     enrolledBadge: 'مشترك',
     free: 'مجاني',
     egp: 'ج.م',
+    or: 'أو',
+    monthly: 'شهرياً',
   },
   en: {
     lessons: 'lessons',
@@ -57,6 +59,8 @@ const content = {
     enrolledBadge: 'Enrolled',
     free: 'Free',
     egp: 'EGP',
+    or: 'or',
+    monthly: '/month',
   },
 };
 
@@ -176,6 +180,11 @@ export default function TeacherCard({ teacher, lang, onEnrollClick }: Props) {
             <span className="text-xs text-muted-foreground">
               {teacher.price === 0 ? '🎁' : t.egp}
             </span>
+            {teacher.subscriptionPrice && (
+              <span className="text-xs text-primary font-medium mt-0.5">
+                {t.or} {teacher.subscriptionPrice} {t.egp} {t.monthly}
+              </span>
+            )}
           </div>
         </div>
 

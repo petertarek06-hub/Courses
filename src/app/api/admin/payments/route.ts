@@ -15,12 +15,12 @@ export async function GET() {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  const [pending, transactions, rejected] = await Promise.all([
+  const [pending, transactions, rejected, negativeBalanceStudents] = await Promise.all([
     prisma.topUpRequest.findMany({
       where: { status: 'pending' },
       orderBy: { createdAt: 'asc' },
       include: {
-        student: { select: { id: true, fullName: true, phone: true, balance: true } },
+        student: { select: { id: true, fullName: true, phone: true, balance: true, isActive: true } },
       },
     }),
     prisma.transaction.findMany({
@@ -38,6 +38,20 @@ export async function GET() {
       include: {
         student: { select: { id: true, fullName: true, phone: true } },
       },
+    }),
+    prisma.user.findMany({
+      where: {
+        role: 'student',
+        balance: { lt: 0 },
+      },
+      select: {
+        id: true,
+        fullName: true,
+        phone: true,
+        balance: true,
+        isActive: true,
+      },
+      orderBy: { balance: 'asc' },
     }),
   ]);
 
@@ -74,7 +88,7 @@ export async function GET() {
     .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
     .slice(0, 50);
 
-  return NextResponse.json({ pending, history });
+  return NextResponse.json({ pending, history, negativeBalanceStudents });
 }
 
 // PATCH — approve or reject a top-up request
@@ -145,6 +159,32 @@ export async function PATCH(req: NextRequest) {
       data: { status: 'rejected', processedById: admin.id, processedAt: new Date() },
     });
   }
+
+  return NextResponse.json({ ok: true });
+}
+
+// POST — suspend or unsuspend a student account
+// Body: { studentId: number, action: 'suspend' | 'unsuspend' }
+export async function POST(req: NextRequest) {
+  const admin = await authorizeAdmin();
+  if (!admin) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
+  const { studentId, action } = await req.json();
+  if (!studentId || !['suspend', 'unsuspend'].includes(action))
+    return NextResponse.json({ error: 'studentId and action required' }, { status: 400 });
+
+  const student = await prisma.user.findUnique({
+    where: { id: Number(studentId) },
+    select: { id: true, role: true },
+  });
+  if (!student) return NextResponse.json({ error: 'Student not found' }, { status: 404 });
+  if (student.role !== 'student')
+    return NextResponse.json({ error: 'Can only suspend student accounts' }, { status: 400 });
+
+  await prisma.user.update({
+    where: { id: Number(studentId) },
+    data: { isActive: action === 'suspend' ? false : true },
+  });
 
   return NextResponse.json({ ok: true });
 }

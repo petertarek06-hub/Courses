@@ -42,6 +42,12 @@ const t = {
     notLoggedInHint: 'سجّل دخولك لتتمكن من الاشتراك في الكورس',
     login: 'تسجيل الدخول',
     errorGeneric: 'حدث خطأ، حاول مجدداً',
+    enrollmentType: 'نوع الاشتراك',
+    fullPrice: 'السعر الكامل',
+    subscription: 'اشتراك شهري',
+    monthly: 'شهرياً',
+    or: 'أو',
+    subscriptionNote: 'سيتم خصم المبلغ شهرياً من رصيدك',
   },
   en: {
     title: 'Enroll in Course',
@@ -63,6 +69,12 @@ const t = {
     notLoggedInHint: 'Please log in to enroll in this course',
     login: 'Log In',
     errorGeneric: 'Something went wrong, please try again',
+    enrollmentType: 'Enrollment Type',
+    fullPrice: 'Full Price',
+    subscription: 'Monthly Subscription',
+    monthly: '/month',
+    or: 'or',
+    subscriptionNote: 'Amount will be deducted monthly from your balance',
   },
 };
 
@@ -82,12 +94,14 @@ export default function EnrollModal({ course, lang, onClose, onEnrolled }: Props
   const [phase, setPhase] = useState<Phase>('loading');
   const [balance, setBalance] = useState<number>(0);
   const [errorMsg, setErrorMsg] = useState('');
+  const [enrollmentType, setEnrollmentType] = useState<'full' | 'subscription'>('full');
 
   // Fetch current user balance when modal opens
   useEffect(() => {
     if (!course) return;
     setPhase('loading');
     setErrorMsg('');
+    setEnrollmentType('full'); // Reset to default
 
     fetch('/api/auth/me')
       .then((r) => r.json())
@@ -111,7 +125,7 @@ export default function EnrollModal({ course, lang, onClose, onEnrolled }: Props
       const res = await fetch('/api/student/enroll', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ courseId: Number(courseId) }),
+        body: JSON.stringify({ courseId: Number(courseId), enrollmentType }),
       });
       const data = await res.json();
 
@@ -129,7 +143,7 @@ export default function EnrollModal({ course, lang, onClose, onEnrolled }: Props
       setErrorMsg(tx.errorGeneric);
       setPhase('error');
     }
-  }, [course, onEnrolled, tx.errorGeneric]);
+  }, [course, onEnrolled, tx.errorGeneric, enrollmentType]);
 
   // Keyboard close
   useEffect(() => {
@@ -143,9 +157,12 @@ export default function EnrollModal({ course, lang, onClose, onEnrolled }: Props
   if (!course) return null;
 
   const price = course.price;
+  const subscriptionPrice = course.subscriptionPrice;
   const isFree = price === 0;
-  const canEnroll = isFree || balance >= price;
-  const remaining = balance - price;
+  const hasSubscription = subscriptionPrice !== null && subscriptionPrice > 0;
+  const selectedPrice = enrollmentType === 'subscription' ? subscriptionPrice! : price;
+  const canEnroll = isFree || (enrollmentType === 'full' ? balance >= price : true); // Allow negative balance for subscriptions
+  const remaining = balance - selectedPrice;
   const courseId = course.id.replace('course-', '');
   const courseName = course.name;
   const accentBg = course.color.split(' ')[0];
@@ -228,6 +245,62 @@ export default function EnrollModal({ course, lang, onClose, onEnrolled }: Props
           {/* ── CONFIRM ── */}
           {(phase === 'confirm' || phase === 'enrolling') && (
             <>
+              {/* Enrollment type selector (if subscription available) */}
+              {hasSubscription && (
+                <div className="mb-5">
+                  <p
+                    className="text-sm font-semibold text-foreground mb-2"
+                    style={fontStyle}
+                  >
+                    {tx.enrollmentType}
+                  </p>
+                  <div className="grid grid-cols-2 gap-3">
+                    <button
+                      onClick={() => setEnrollmentType('full')}
+                      className={`p-3 rounded-xl border-2 transition-all ${
+                        enrollmentType === 'full'
+                          ? 'border-primary bg-primary/5'
+                          : 'border-border hover:border-primary/30'
+                      }`}
+                    >
+                      <div className="text-center">
+                        <p className="font-bold text-foreground text-sm" style={fontStyle}>
+                          {tx.fullPrice}
+                        </p>
+                        <p className="text-xs text-muted-foreground mt-1" style={fontStyle}>
+                          {fmt(price, lang)}
+                        </p>
+                      </div>
+                    </button>
+                    <button
+                      onClick={() => setEnrollmentType('subscription')}
+                      className={`p-3 rounded-xl border-2 transition-all ${
+                        enrollmentType === 'subscription'
+                          ? 'border-primary bg-primary/5'
+                          : 'border-border hover:border-primary/30'
+                      }`}
+                    >
+                      <div className="text-center">
+                        <p className="font-bold text-foreground text-sm" style={fontStyle}>
+                          {tx.subscription}
+                        </p>
+                        <p className="text-xs text-muted-foreground mt-1" style={fontStyle}>
+                          {fmt(subscriptionPrice!, lang)} {tx.monthly}
+                        </p>
+                      </div>
+                    </button>
+                  </div>
+                  {enrollmentType === 'subscription' && (
+                    <p
+                      className="text-xs text-muted-foreground mt-2 text-center"
+                      style={fontStyle}
+                    >
+                      {tx.subscriptionNote}
+                    </p>
+                  )}
+                </div>
+              )}
+
               {/* Price / Balance rows */}
               <div className="rounded-2xl bg-muted/50 divide-y divide-border overflow-hidden mb-5">
                 {/* Course price */}
@@ -237,10 +310,10 @@ export default function EnrollModal({ course, lang, onClose, onEnrolled }: Props
                     style={fontStyle}
                   >
                     <BookOpen size={15} className="text-primary" />
-                    {tx.price}
+                    {enrollmentType === 'subscription' ? tx.subscription : tx.price}
                   </div>
                   <span className="font-extrabold text-foreground text-sm" style={fontStyle}>
-                    {isFree ? tx.free : fmt(price, lang)}
+                    {isFree ? tx.free : fmt(selectedPrice, lang)}
                   </span>
                 </div>
 
@@ -256,7 +329,9 @@ export default function EnrollModal({ course, lang, onClose, onEnrolled }: Props
                         {tx.balance}
                       </div>
                       <span
-                        className={`font-extrabold text-sm ${canEnroll ? 'text-secondary' : 'text-destructive'}`}
+                        className={`font-extrabold text-sm ${
+                          balance >= selectedPrice ? 'text-secondary' : enrollmentType === 'subscription' ? 'text-foreground' : 'text-destructive'
+                        }`}
                         style={fontStyle}
                       >
                         {fmt(balance, lang)}
@@ -284,7 +359,7 @@ export default function EnrollModal({ course, lang, onClose, onEnrolled }: Props
               </div>
 
               {/* Insufficient balance warning */}
-              {!isFree && !canEnroll && (
+              {!isFree && enrollmentType === 'full' && !canEnroll && (
                 <div className="flex items-start gap-2.5 p-3 rounded-xl bg-destructive/10 text-destructive mb-5">
                   <AlertCircle size={16} className="mt-0.5 shrink-0" />
                   <div>
@@ -297,7 +372,7 @@ export default function EnrollModal({ course, lang, onClose, onEnrolled }: Props
                   </div>
                 </div>
               )}
-
+              {/* ... */}
               {/* Action buttons */}
               <div className="flex gap-3">
                 <button
