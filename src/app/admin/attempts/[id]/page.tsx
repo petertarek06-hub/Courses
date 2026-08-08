@@ -1,3 +1,4 @@
+//src\app\admin\attempts\[id]\page.tsx
 'use client';
 import { useParams } from 'next/navigation';
 import { useAdminLang } from '../../Adminshell';

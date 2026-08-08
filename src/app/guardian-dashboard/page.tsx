@@ -974,7 +974,7 @@ export default function GuardianDashboardPage() {
               )}
             </SectionCard>
 
-            {/* Exam Results — view-only, no navigation into answer review */}
+            {/* Exam Results — tap a submitted attempt to review answers */}
             <SectionCard title={t.exams} icon={ClipboardList}>
               {examAttempts.length === 0 ? (
                 <div className="flex flex-col items-center py-10 gap-2">
@@ -985,51 +985,71 @@ export default function GuardianDashboardPage() {
                 </div>
               ) : (
                 <div className="flex flex-col gap-3">
-                  {examAttempts.map((attempt) => (
-                    <div
-                      key={attempt.id}
-                      className="p-4 rounded-xl border border-border bg-background"
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <p
-                            className="font-semibold text-foreground text-sm truncate"
-                            style={{ fontFamily: font }}
-                          >
-                            {attempt.exam.lesson.title}
-                          </p>
-                          <p
-                            className="text-xs text-muted-foreground mt-0.5 truncate"
-                            style={{ fontFamily: font }}
-                          >
-                            {attempt.exam.lesson.course.name}
-                          </p>
+                  {examAttempts.map((attempt) => {
+                    // Only submitted attempts have anything to review —
+                    // an attempt still in progress has no answers page yet.
+                    const isClickable = Boolean(attempt.submittedAt);
+                    return (
+                      <div
+                        key={attempt.id}
+                        onClick={
+                          isClickable
+                            ? () => router.push(`/guardian-dashboard/attempts/${attempt.id}`)
+                            : undefined
+                        }
+                        className={`p-4 rounded-xl border border-border bg-background transition-all group ${
+                          isClickable
+                            ? 'cursor-pointer hover:bg-muted/20 hover:border-primary/40'
+                            : ''
+                        }`}
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <p
+                              className="font-semibold text-foreground text-sm truncate"
+                              style={{ fontFamily: font }}
+                            >
+                              {attempt.exam.lesson.title}
+                            </p>
+                            <p
+                              className="text-xs text-muted-foreground mt-0.5 truncate"
+                              style={{ fontFamily: font }}
+                            >
+                              {attempt.exam.lesson.course.name}
+                            </p>
+                          </div>
+                          {examStatusBadge(attempt)}
                         </div>
-                        {examStatusBadge(attempt)}
-                      </div>
-                      {attempt.submittedAt && (
-                        <div className="flex items-center justify-between mt-2">
-                          <div className="flex items-center gap-4 text-xs text-muted-foreground">
-                            <span style={{ fontFamily: font }}>
-                              {t.score}:{' '}
-                              <span className="font-bold text-foreground">
-                                {attempt.score ?? '—'}
+                        {attempt.submittedAt && (
+                          <div className="flex items-center justify-between mt-2 flex-wrap gap-2">
+                            <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                              <span style={{ fontFamily: font }}>
+                                {t.score}:{' '}
+                                <span className="font-bold text-foreground">
+                                  {attempt.score ?? '—'}
+                                </span>
                               </span>
-                            </span>
-                            <span style={{ fontFamily: font }}>
-                              {t.passingScore}:{' '}
-                              <span className="font-bold text-foreground">
-                                {attempt.exam.passingScore}
+                              <span style={{ fontFamily: font }}>
+                                {t.passingScore}:{' '}
+                                <span className="font-bold text-foreground">
+                                  {attempt.exam.passingScore}
+                                </span>
                               </span>
-                            </span>
-                            <span dir="ltr">
-                              {new Date(attempt.submittedAt).toLocaleDateString('en-EG')}
+                              <span dir="ltr">
+                                {new Date(attempt.submittedAt).toLocaleDateString('en-EG')}
+                              </span>
+                            </div>
+                            <span
+                              className="text-xs font-bold text-primary opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0"
+                              style={{ fontFamily: font }}
+                            >
+                              {t.viewAnswers}
                             </span>
                           </div>
-                        </div>
-                      )}
-                    </div>
-                  ))}
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </SectionCard>

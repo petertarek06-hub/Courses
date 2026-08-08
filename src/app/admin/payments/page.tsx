@@ -164,7 +164,9 @@ export default function AdminPaymentsPage() {
 
   const [requests, setRequests] = useState<PendingTx[]>([]);
   const [history, setHistory] = useState<HistoryItem[]>([]);
-  const [negativeBalanceStudents, setNegativeBalanceStudents] = useState<NegativeBalanceStudent[]>([]);
+  const [negativeBalanceStudents, setNegativeBalanceStudents] = useState<NegativeBalanceStudent[]>(
+    []
+  );
   const [loading, setLoading] = useState(true);
   const [processing, setProcessing] = useState<number | null>(null);
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -459,8 +461,6 @@ export default function AdminPaymentsPage() {
 
       {/* ── Negative Balance Students ───────────────────────── */}
       <div className="flex items-center gap-2 mb-3 sm:mb-4 mt-8 sm:mt-10">
-        <AlertCircle size={16} className="text-red-500 sm:hidden" />
-        <AlertCircle size={18} className="text-red-500 hidden sm:block" />
         <h2
           className="text-base sm:text-lg font-extrabold text-foreground"
           style={{ fontFamily: font }}
@@ -541,7 +541,9 @@ export default function AdminPaymentsPage() {
                       </td>
                       <td className="px-2 sm:px-4 py-2 sm:py-3 text-center align-middle border-b border-border">
                         <button
-                          onClick={() => handleSuspend(student.id, student.isActive ? 'suspend' : 'unsuspend')}
+                          onClick={() =>
+                            handleSuspend(student.id, student.isActive ? 'suspend' : 'unsuspend')
+                          }
                           disabled={suspendingId === student.id}
                           className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all disabled:opacity-50 ${
                             student.isActive

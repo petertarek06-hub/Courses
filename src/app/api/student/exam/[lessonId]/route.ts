@@ -248,8 +248,6 @@ export async function POST(
     return newAttempt;
   });
 
-  // ✅ NEW: when essay questions exist, withhold all score/pass data from the response.
-  // The frontend should show only the "pending manual grading" message in this case.
   if (hasEssay) {
     return NextResponse.json({
       attemptId: attempt.id,

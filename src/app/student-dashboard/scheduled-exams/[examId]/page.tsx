@@ -5,15 +5,7 @@ import { useRouter, useParams } from 'next/navigation';
 import Header from '@/components/Header';
 import Footer from '@/components/Footer';
 import { useLang } from '@/lib/uselang';
-import {
-  Clock,
-  AlertCircle,
-  CheckCircle,
-  Loader2,
-  ArrowRight,
-  Play,
-  X,
-} from 'lucide-react';
+import { Clock, AlertCircle, CheckCircle, Loader2, ArrowRight, Play, X } from 'lucide-react';
 import { toast } from 'sonner';
 
 interface Question {
@@ -75,6 +67,8 @@ const content = {
     true: 'صح',
     false: 'خطأ',
     yourAnswer: 'إجابتك',
+    passingScore: 'درجة النجاح',
+    markUnit: 'نقطة',
   },
   en: {
     back: 'Back to Dashboard',
@@ -101,6 +95,8 @@ const content = {
     true: 'True',
     false: 'False',
     yourAnswer: 'Your answer',
+    passingScore: 'Passing Score',
+    markUnit: 'points',
   },
 };
 
@@ -187,10 +183,11 @@ export default function ScheduledExamPage() {
   const handleSubmit = async () => {
     if (!attemptId) return;
 
-    const answersArray = examData?.questions.map((q) => ({
-      examQuestionId: q.id,
-      givenAnswer: answers[q.id] || '',
-    })) || [];
+    const answersArray =
+      examData?.questions.map((q) => ({
+        examQuestionId: q.id,
+        givenAnswer: answers[q.id] || '',
+      })) || [];
 
     if (answersArray.some((a) => !a.givenAnswer)) {
       toast.error(t.noAnswer);
@@ -209,15 +206,19 @@ export default function ScheduledExamPage() {
 
       const result = await res.json();
       toast.success(t.examSubmitted);
-      setExamData((prev) => prev ? {
-        ...prev,
-        previousAttempt: {
-          id: attemptId,
-          score: result.score,
-          passed: result.passed,
-          submittedAt: new Date().toISOString(),
-        },
-      } : null);
+      setExamData((prev) =>
+        prev
+          ? {
+              ...prev,
+              previousAttempt: {
+                id: attemptId,
+                score: result.score,
+                passed: result.passed,
+                submittedAt: new Date().toISOString(),
+              },
+            }
+          : null
+      );
       setExamStarted(false);
     } catch {
       toast.error(t.error);
@@ -293,7 +294,7 @@ export default function ScheduledExamPage() {
         </div>
 
         {/* Previous attempt result */}
-        {hasPreviousAttempt && !examStarted && (
+        {hasPreviousAttempt && !examStarted && examData.previousAttempt && (
           <div className="bg-card rounded-xl border border-border p-6 mb-6 card-shadow">
             <div className="flex items-center gap-3 mb-4">
               {examData.previousAttempt.passed === true ? (
@@ -308,8 +309,8 @@ export default function ScheduledExamPage() {
                   {examData.previousAttempt.passed === true
                     ? t.passed
                     : examData.previousAttempt.passed === false
-                    ? t.failed
-                    : t.pendingGrading}
+                      ? t.failed
+                      : t.pendingGrading}
                 </p>
                 {examData.previousAttempt.score !== null && (
                   <p className="text-sm text-muted-foreground">
@@ -345,15 +346,21 @@ export default function ScheduledExamPage() {
                 {examData.exam.durationMinutes && (
                   <div className="flex items-center gap-1.5">
                     <Clock size={16} />
-                    <span>{examData.exam.durationMinutes} {t.minutes}</span>
+                    <span>
+                      {examData.exam.durationMinutes} {t.minutes}
+                    </span>
                   </div>
                 )}
                 <div className="flex items-center gap-1.5">
-                  <span>{t.question}: {examData.questions.length}</span>
+                  <span>
+                    {t.question}: {examData.questions.length}
+                  </span>
                 </div>
                 <div className="flex items-center gap-1.5">
                   <CheckCircle size={16} />
-                  <span>{t.passingScore}: {examData.exam.passingScore}%</span>
+                  <span>
+                    {t.passingScore}: {examData.exam.passingScore}%
+                  </span>
                 </div>
               </div>
 
@@ -377,7 +384,10 @@ export default function ScheduledExamPage() {
               <div className="bg-card rounded-xl border border-border p-4 flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <Clock size={20} className="text-primary" />
-                  <span className="text-sm font-semibold text-foreground" style={{ fontFamily: font }}>
+                  <span
+                    className="text-sm font-semibold text-foreground"
+                    style={{ fontFamily: font }}
+                  >
                     {t.timeRemaining}
                   </span>
                 </div>
@@ -394,38 +404,43 @@ export default function ScheduledExamPage() {
                   {t.question} {currentQuestionIndex + 1} {t.of} {examData.questions.length}
                 </span>
                 <span className="text-xs px-2 py-1 rounded-full bg-primary/10 text-primary font-semibold">
-                  {currentQuestion.mark} {t.markUnit || 'points'}
+                  {currentQuestion.mark} {t.markUnit}
                 </span>
               </div>
 
-              <p className="text-base font-medium text-foreground mb-6" style={{ fontFamily: font }}>
+              <p
+                className="text-base font-medium text-foreground mb-6"
+                style={{ fontFamily: font }}
+              >
                 {currentQuestion.question.text}
               </p>
 
               {currentQuestion.question.type === 'mcq' && (
                 <div className="space-y-3">
-                  {JSON.parse(currentQuestion.question.optionsJson).map((option: string, idx: number) => (
-                    <label
-                      key={idx}
-                      className={`flex items-center gap-3 p-4 rounded-xl border cursor-pointer transition-all ${
-                        answers[currentQuestion.id] === option
-                          ? 'border-primary bg-primary/5'
-                          : 'border-border hover:border-primary/30'
-                      }`}
-                    >
-                      <input
-                        type="radio"
-                        name={`question-${currentQuestion.id}`}
-                        value={option}
-                        checked={answers[currentQuestion.id] === option}
-                        onChange={(e) => handleAnswer(currentQuestion.id, e.target.value)}
-                        className="w-4 h-4 text-primary"
-                      />
-                      <span className="text-sm text-foreground" style={{ fontFamily: font }}>
-                        {option}
-                      </span>
-                    </label>
-                  ))}
+                  {JSON.parse(currentQuestion.question.optionsJson).map(
+                    (option: string, idx: number) => (
+                      <label
+                        key={idx}
+                        className={`flex items-center gap-3 p-4 rounded-xl border cursor-pointer transition-all ${
+                          answers[currentQuestion.id] === option
+                            ? 'border-primary bg-primary/5'
+                            : 'border-border hover:border-primary/30'
+                        }`}
+                      >
+                        <input
+                          type="radio"
+                          name={`question-${currentQuestion.id}`}
+                          value={option}
+                          checked={answers[currentQuestion.id] === option}
+                          onChange={(e) => handleAnswer(currentQuestion.id, e.target.value)}
+                          className="w-4 h-4 text-primary"
+                        />
+                        <span className="text-sm text-foreground" style={{ fontFamily: font }}>
+                          {option}
+                        </span>
+                      </label>
+                    )
+                  )}
                 </div>
               )}
 
@@ -513,7 +528,11 @@ export default function ScheduledExamPage() {
                 </button>
               ) : (
                 <button
-                  onClick={() => setCurrentQuestionIndex((prev) => Math.min(examData.questions.length - 1, prev + 1))}
+                  onClick={() =>
+                    setCurrentQuestionIndex((prev) =>
+                      Math.min(examData.questions.length - 1, prev + 1)
+                    )
+                  }
                   className="px-4 py-2 rounded-xl gradient-primary text-white text-sm font-bold hover:opacity-90 transition-opacity"
                   style={{ fontFamily: font }}
                 >

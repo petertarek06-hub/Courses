@@ -1,11 +1,18 @@
-//src\app\teacher-dashboard\page.tsx
 'use client';
 import React, { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Header from '@/components/Header';
 import Footer from '@/components/Footer';
 import { useLang } from '@/lib/uselang';
-import { BookOpen, Users, ListVideo, Loader2, GraduationCap, ClipboardList, Calendar } from 'lucide-react';
+import {
+  BookOpen,
+  Users,
+  ListVideo,
+  Loader2,
+  GraduationCap,
+  ClipboardList,
+  Calendar,
+} from 'lucide-react';
 
 const gradeLabelMap: Record<string, { ar: string; en: string }> = {
   'grade-1': { ar: 'الصف الأول الابتدائي', en: 'Grade 1' },
@@ -39,9 +46,11 @@ const content = {
     title: 'لوحة المدرس',
     myCourses: 'كورساتي',
     manageLessons: 'إدارة الدروس',
+    students: 'الطلاب',
     examsLink: 'الامتحانات',
+    scheduledExams: 'مجدول',
     lessons: 'درس',
-    students: 'طالب',
+    students_count: 'طالب',
     free: 'مجاني',
     egp: 'ج.م',
     visible: 'مرئي',
@@ -53,9 +62,11 @@ const content = {
     title: 'teacher Dashboard',
     myCourses: 'My Courses',
     manageLessons: 'Manage Lessons',
+    students: 'Students',
     examsLink: 'Exams',
+    scheduledExams: 'Scheduled',
     lessons: 'lessons',
-    students: 'students',
+    students_count: 'students',
     free: 'Free',
     egp: 'EGP',
     visible: 'Visible',
@@ -173,37 +184,57 @@ export default function teacherDashboardPage() {
                     </span>
                     <span className="flex items-center gap-1">
                       <Users size={12} />
-                      {course._count.enrollments} {t.students}
+                      {course._count.enrollments} {t.students_count}
                     </span>
                     <span className="font-semibold text-foreground" dir="ltr">
                       {course.price === 0 ? t.free : `${course.price} ${t.egp}`}
                     </span>
                   </div>
-                  <div className="mt-auto flex items-center gap-2">
-                    <button
-                      onClick={() => router.push(`/teacher-dashboard/courses/${course.id}/lessons`)}
-                      className="flex-1 flex items-center justify-center gap-2 py-2 rounded-xl gradient-primary text-white text-xs font-bold hover:opacity-90 active:scale-95 transition-all"
-                      style={{ fontFamily: font }}
-                    >
-                      <ListVideo size={14} />
-                      {t.manageLessons}
-                    </button>
-                    <button
-                      onClick={() => router.push(`/teacher-dashboard/courses/${course.id}/exams`)}
-                      className="flex-1 flex items-center justify-center gap-2 py-2 rounded-xl border border-border text-foreground text-xs font-bold hover:bg-muted transition-all"
-                      style={{ fontFamily: font }}
-                    >
-                      <ClipboardList size={14} />
-                      {t.examsLink}
-                    </button>
-                    <button
-                      onClick={() => router.push(`/teacher-dashboard/courses/${course.id}/scheduled-exams`)}
-                      className="flex-1 flex items-center justify-center gap-2 py-2 rounded-xl border border-border text-foreground text-xs font-bold hover:bg-muted transition-all"
-                      style={{ fontFamily: font }}
-                    >
-                      <Calendar size={14} />
-                      {isRtl ? 'مجدول' : 'Scheduled'}
-                    </button>
+
+                  {/* Action buttons - now with Students button */}
+                  <div className="mt-auto flex flex-col gap-2">
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() =>
+                          router.push(`/teacher-dashboard/courses/${course.id}/lessons`)
+                        }
+                        className="flex-1 flex items-center justify-center gap-2 py-2 rounded-xl gradient-primary text-white text-xs font-bold hover:opacity-90 active:scale-95 transition-all"
+                        style={{ fontFamily: font }}
+                      >
+                        <ListVideo size={14} />
+                        {t.manageLessons}
+                      </button>
+                      <button
+                        onClick={() => router.push(`/teacher-dashboard/courses/${course.id}/exams`)}
+                        className="flex-1 flex items-center justify-center gap-2 py-2 rounded-xl border border-border text-foreground text-xs font-bold hover:bg-muted transition-all"
+                        style={{ fontFamily: font }}
+                      >
+                        <ClipboardList size={14} />
+                        {t.examsLink}
+                      </button>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() =>
+                          router.push(`/teacher-dashboard/courses/${course.id}/students`)
+                        }
+                        className="flex-1 flex items-center justify-center gap-2 py-2 rounded-xl border border-border text-foreground text-xs font-bold hover:bg-muted transition-all"
+                        style={{ fontFamily: font }}
+                      >
+                        <Users size={14} />
+                        {t.students}
+                      </button>
+                      <button
+                        onClick={() =>
+                          router.push(`/teacher-dashboard/courses/${course.id}/scheduled-exams`)
+                        }
+                        className="flex-1 flex items-center justify-center gap-2 py-2 rounded-xl border border-border text-foreground text-xs font-bold hover:bg-muted transition-all"
+                        style={{ fontFamily: font }}
+                      >
+                        <Calendar size={14} />
+                        {t.scheduledExams}
+                      </button>
+                    </div>
                   </div>
                 </div>
               ))}

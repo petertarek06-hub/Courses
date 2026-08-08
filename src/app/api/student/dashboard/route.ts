@@ -129,11 +129,25 @@ export async function GET() {
   const now = new Date();
 
   const enrichedEnrollments = enrollments.map((e) => {
-    // Progress is based solely on video lessons — exams don't count
-    // toward (or against) the completion percentage.
-    const videoLessons = e.course.lessons.filter((l) => l.type === 'video');
-    const totalLessons = videoLessons.length;
-    const completedLessons = videoLessons.filter((l) => completedLessonIds.has(l.id)).length;
+    // Count ALL lessons (videos + exams), not just videos
+    const allLessons = e.course.lessons;
+    const totalLessons = allLessons.length;
+
+    // Get completed lessons: videos marked complete OR exams with submitted attempts
+    const completedLessons = allLessons.filter((l) => {
+      if (l.type === 'video') {
+        // Video: check LessonProgress
+        return completedLessonIds.has(l.id);
+      } else if (l.type === 'exam') {
+        // Exam: check if student has submitted an attempt
+        const hasSubmittedAttempt = examAttempts.some(
+          (attempt) => attempt.exam.lessonId === l.id && attempt.submittedAt !== null
+        );
+        return hasSubmittedAttempt;
+      }
+      return false;
+    }).length;
+
     const progress = totalLessons > 0 ? Math.round((completedLessons / totalLessons) * 100) : 0;
 
     // Earliest upcoming scheduled exam for this course, if any

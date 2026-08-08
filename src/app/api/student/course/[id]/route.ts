@@ -61,6 +61,26 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
           },
         },
       },
+      scheduledExams: {
+        where: { isVisible: true },
+        orderBy: { scheduledAt: 'asc' },
+        include: {
+          examQuestions: {
+            select: { id: true, order: true, mark: true },
+          },
+          attempts: {
+            where: { studentId: user.id },
+            orderBy: { startedAt: 'desc' },
+            take: 1,
+            select: {
+              id: true,
+              score: true,
+              passed: true,
+              submittedAt: true,
+            },
+          },
+        },
+      },
     },
   });
 

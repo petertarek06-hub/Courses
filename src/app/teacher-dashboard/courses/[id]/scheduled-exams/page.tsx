@@ -123,6 +123,10 @@ export default function TeacherScheduledExamsPage() {
     passingScore: '50',
     scheduledAt: '',
   });
+  const [showQuestionSelector, setShowQuestionSelector] = useState(false);
+  const [selectedQuestions, setSelectedQuestions] = useState<number[]>([]);
+  const [availableQuestions, setAvailableQuestions] = useState<any[]>([]);
+  const [loadingQuestions, setLoadingQuestions] = useState(false);
 
   const fetchExams = async () => {
     setLoading(true);
@@ -135,6 +139,47 @@ export default function TeacherScheduledExamsPage() {
       toast.error(t.error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchQuestions = async () => {
+    setLoadingQuestions(true);
+    try {
+      const res = await fetch(`/api/admin/questions?courseId=${courseId}`);
+      if (!res.ok) throw new Error();
+      const data = await res.json();
+      setAvailableQuestions(data);
+    } catch {
+      toast.error(t.error);
+    } finally {
+      setLoadingQuestions(false);
+    }
+  };
+
+  const handleAddQuestions = async (examId: number) => {
+    if (selectedQuestions.length === 0) {
+      toast.error('Please select at least one question');
+      return;
+    }
+
+    try {
+      const res = await fetch('/api/teacher/scheduled-exams', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: examId,
+          action: 'addQuestions',
+          questionIds: selectedQuestions,
+        }),
+      });
+
+      if (!res.ok) throw new Error();
+      toast.success('Questions added successfully');
+      setShowQuestionSelector(false);
+      setSelectedQuestions([]);
+      fetchExams();
+    } catch {
+      toast.error(t.error);
     }
   };
 
@@ -325,16 +370,139 @@ export default function TeacherScheduledExamsPage() {
 
                   <div className="flex items-center gap-2">
                     <button
-                      onClick={() => handleEdit(exam)}
+                      onClick={() => {
+                        setEditingExam(exam);
+                        setFormData({
+                          title: exam.title,
+                          durationMinutes: exam.durationMinutes?.toString() || '',
+                          passingScore: exam.passingScore.toString(),
+                          scheduledAt: new Date(exam.scheduledAt).toISOString().slice(0, 16),
+                        });
+                        setShowModal(true);
+                      }}
                       className="p-2 rounded-lg hover:bg-muted transition-colors"
                       title={t.edit}
                     >
                       <Pencil size={16} />
                     </button>
+                    <button
+                      onClick={() => {
+                        setEditingExam(exam);
+                        setSelectedQuestions([]);
+                        setShowQuestionSelector(true);
+                        fetchQuestions();
+                      }}
+                      className="p-2 rounded-lg hover:bg-muted transition-colors"
+                      title="Add Questions"
+                    >
+                      <Plus size={16} />
+                    </button>
                   </div>
                 </div>
               </div>
             ))}
+          </div>
+        )}
+
+        {/* Question Selector Modal */}
+        {showQuestionSelector && editingExam && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+            <div className="bg-card rounded-2xl border border-border p-6 w-full max-w-2xl max-h-[80vh] overflow-y-auto">
+              <div className="flex items-center justify-between mb-6">
+                <h2 className="text-lg font-bold text-foreground" style={{ fontFamily: font }}>
+                  Add Questions to {editingExam.title}
+                </h2>
+                <button
+                  onClick={() => {
+                    setShowQuestionSelector(false);
+                    setEditingExam(null);
+                    setSelectedQuestions([]);
+                  }}
+                  className="p-1 rounded-lg hover:bg-muted transition-colors"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+
+              {loadingQuestions ? (
+                <div className="flex items-center justify-center py-10 gap-3">
+                  <Loader2 size={24} className="animate-spin text-primary" />
+                  <span className="text-muted-foreground text-sm" style={{ fontFamily: font }}>
+                    Loading questions...
+                  </span>
+                </div>
+              ) : (
+                <>
+                  <div className="mb-4">
+                    <p className="text-sm text-muted-foreground" style={{ fontFamily: font }}>
+                      Selected: {selectedQuestions.length} questions
+                    </p>
+                  </div>
+                  <div className="space-y-2 max-h-96 overflow-y-auto">
+                    {availableQuestions.map((q) => (
+                      <label
+                        key={q.id}
+                        className="flex items-start gap-3 p-3 rounded-lg border border-border hover:bg-muted/30 cursor-pointer transition-colors"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={selectedQuestions.includes(q.id)}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setSelectedQuestions([...selectedQuestions, q.id]);
+                            } else {
+                              setSelectedQuestions(selectedQuestions.filter((id) => id !== q.id));
+                            }
+                          }}
+                          className="mt-1"
+                        />
+                        <div className="flex-1">
+                          <p className="text-sm font-medium text-foreground" style={{ fontFamily: font }}>
+                            {q.text}
+                          </p>
+                          <div className="flex items-center gap-2 mt-1">
+                            <span className="text-xs px-2 py-0.5 rounded-full bg-primary/10 text-primary font-bold">
+                              {q.type}
+                            </span>
+                            {q.topic && (
+                              <span className="text-xs text-muted-foreground" style={{ fontFamily: font }}>
+                                {q.topic.name}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </label>
+                    ))}
+                    {availableQuestions.length === 0 && (
+                      <p className="text-center text-muted-foreground text-sm py-8" style={{ fontFamily: font }}>
+                        No questions available in the question bank
+                      </p>
+                    )}
+                  </div>
+                  <div className="flex gap-3 pt-4">
+                    <button
+                      onClick={() => handleAddQuestions(editingExam.id)}
+                      disabled={selectedQuestions.length === 0}
+                      className="flex-1 py-2.5 rounded-xl gradient-primary text-white text-sm font-bold hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
+                      style={{ fontFamily: font }}
+                    >
+                      Add Selected Questions
+                    </button>
+                    <button
+                      onClick={() => {
+                        setShowQuestionSelector(false);
+                        setEditingExam(null);
+                        setSelectedQuestions([]);
+                      }}
+                      className="flex-1 py-2.5 rounded-xl border border-border text-foreground text-sm font-bold hover:bg-muted transition-colors"
+                      style={{ fontFamily: font }}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
           </div>
         )}
 

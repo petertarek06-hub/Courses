@@ -24,9 +24,6 @@ import {
   Check,
   HelpCircle,
   FileText,
-  CalendarClock,
-  CalendarCheck2,
-  CalendarX2,
   ListOrdered,
   Settings,
   Lock,
@@ -68,7 +65,8 @@ interface ExamRecord {
   id: number;
   durationMinutes: number | null;
   passingScore: number;
-  scheduledAt: string | null; // ISO string from API
+  // Note: lesson-linked exams are never date/time scheduled — that concept
+  // belongs solely to ScheduledExam (course-level, decoupled from units).
   examQuestions: ExamQuestion[];
 }
 interface Lesson {
@@ -132,14 +130,6 @@ const T = {
     examNamePlaceholder: 'مثال: اختبار الفصل الأول',
     durationMinutes: 'مدة الاختبار (دقيقة) — اختياري',
     passingScore: 'درجة النجاح (%)',
-    scheduleLabel: 'موعد إتاحة الاختبار',
-    scheduleHint:
-      'اتركه فارغًا ليكون الاختبار متاحًا فورًا. إذا حُدِّد موعد، لن يرى الطلاب الاختبار قبله.',
-    scheduleNow: 'متاح فورًا',
-    scheduleLater: 'جدولة في وقت محدد',
-    scheduledFor: 'مجدول في',
-    schedulePast: 'متاح الآن',
-    clearSchedule: 'إلغاء الجدولة',
     saveSettings: 'حفظ الإعدادات',
     examQuestionsSection: 'أسئلة الاختبار',
     totalMarks: 'إجمالي الدرجات',
@@ -222,14 +212,6 @@ const T = {
     examNamePlaceholder: 'e.g. First Term Quiz',
     durationMinutes: 'Duration (minutes) — optional',
     passingScore: 'Passing score (%)',
-    scheduleLabel: 'Quiz availability',
-    scheduleHint:
-      'Leave unscheduled to make it available immediately. When a date is set, students cannot see the quiz before that time.',
-    scheduleNow: 'Available immediately',
-    scheduleLater: 'Schedule for a specific time',
-    scheduledFor: 'Scheduled for',
-    schedulePast: 'Live now',
-    clearSchedule: 'Clear schedule',
     saveSettings: 'Save Settings',
     examQuestionsSection: 'Quiz Questions',
     totalMarks: 'Total marks',
@@ -300,32 +282,6 @@ function parseOptions(json: string): string[] {
   } catch {
     return [];
   }
-}
-
-function toDatetimeLocal(date: Date): string {
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return (
-    `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}` +
-    `T${pad(date.getHours())}:${pad(date.getMinutes())}`
-  );
-}
-
-function formatScheduledAt(iso: string | null | undefined, lang: 'ar' | 'en'): string | null {
-  if (!iso) return null;
-  const d = new Date(iso);
-  if (isNaN(d.getTime())) return null;
-  return d.toLocaleString(lang === 'ar' ? 'ar-EG' : 'en-GB', {
-    day: '2-digit',
-    month: 'short',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
-}
-
-function isExamLive(scheduledAt: string | null | undefined): boolean {
-  if (!scheduledAt) return true;
-  return new Date(scheduledAt) <= new Date();
 }
 
 // ─── Reusable UI ──────────────────────────────────────────────
@@ -512,33 +468,6 @@ function QTypeBadge({ type, t, font }: { type: string; t: TType; font?: string }
       style={{ fontFamily: font }}
     >
       {t.essay}
-    </span>
-  );
-}
-
-function ScheduleBadge({
-  scheduledAt,
-  t,
-  lang,
-  font,
-}: {
-  scheduledAt: string | null | undefined;
-  t: TType;
-  lang: 'ar' | 'en';
-  font?: string;
-}) {
-  if (!scheduledAt) return null;
-  const live = isExamLive(scheduledAt);
-  const label = formatScheduledAt(scheduledAt, lang);
-
-  return (
-    <span
-      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] sm:text-xs font-bold border ${live ? 'bg-green-50 text-green-600 border-green-200' : 'bg-amber-50 text-amber-600 border-amber-200'}`}
-      style={{ fontFamily: font }}
-      title={`${t.scheduledFor}: ${label}`}
-    >
-      {live ? <CalendarCheck2 size={11} /> : <CalendarClock size={11} />}
-      {live ? t.schedulePast : label}
     </span>
   );
 }
@@ -1074,15 +1003,6 @@ function UnitCard({
                 )}
               </div>
 
-              {lesson.type === 'exam' && (
-                <ScheduleBadge
-                  scheduledAt={lesson.exam?.scheduledAt}
-                  t={t}
-                  lang={lang}
-                  font={font}
-                />
-              )}
-
               <span
                 className={`hidden sm:flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold flex-shrink-0 ${lesson.isVisible ? 'bg-green-500/10 text-green-600' : 'bg-muted text-muted-foreground'}`}
                 style={{ fontFamily: font }}
@@ -1357,6 +1277,8 @@ function VideoModal({
 // ═══════════════════════════════════════════════════════════════
 // ADD QUIZ MODAL — lightweight create (questions added afterward via Manage)
 // Opening this modal already requires canAddExam (checked by parent).
+// This exam is linked solely to the unit/lesson. No date/time scheduling
+// here — that's exclusively a ScheduledExam concept, decoupled from units.
 // ═══════════════════════════════════════════════════════════════
 function AddQuizModal({
   courseId,
@@ -1377,10 +1299,8 @@ function AddQuizModal({
 }) {
   const isRtl = lang === 'ar';
   const [form, setForm] = useState({ title: '', durationMinutes: '', passingScore: '50' });
-  const [scheduledValue, setScheduledValue] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const f = (k: string, v: string) => setForm((p) => ({ ...p, [k]: v }));
-  const minDatetimeLocal = toDatetimeLocal(new Date());
 
   const handleSave = async () => {
     if (!form.title) {
@@ -1388,11 +1308,10 @@ function AddQuizModal({
       return;
     }
     setSaving(true);
-    const scheduledAt = scheduledValue ? new Date(scheduledValue).toISOString() : null;
     await fetch('/api/admin/lessons', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ courseId, unitId, type: 'exam', ...form, scheduledAt }),
+      body: JSON.stringify({ courseId, unitId, type: 'exam', ...form }),
     });
     toast.success(t.addedOk);
     setSaving(false);
@@ -1431,43 +1350,6 @@ function AddQuizModal({
             dir="ltr"
           />
         </Field>
-        <Field label={t.scheduleLabel} hint={t.scheduleHint} font={font}>
-          <div className="grid grid-cols-2 gap-1.5 sm:gap-2 mb-1.5 sm:mb-2">
-            <button
-              type="button"
-              onClick={() => setScheduledValue(null)}
-              className={`flex items-center justify-center gap-1.5 py-1.5 sm:py-2 rounded-xl border text-[10px] sm:text-xs font-bold transition-all ${scheduledValue === null ? 'border-primary bg-primary/10 text-primary' : 'border-border text-muted-foreground hover:border-primary/30'}`}
-              style={{ fontFamily: font }}
-            >
-              <CalendarCheck2 size={13} /> {t.scheduleNow}
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                if (scheduledValue === null) {
-                  const tomorrow = new Date();
-                  tomorrow.setDate(tomorrow.getDate() + 1);
-                  tomorrow.setHours(8, 0, 0, 0);
-                  setScheduledValue(toDatetimeLocal(tomorrow));
-                }
-              }}
-              className={`flex items-center justify-center gap-1.5 py-1.5 sm:py-2 rounded-xl border text-[10px] sm:text-xs font-bold transition-all ${scheduledValue !== null ? 'border-primary bg-primary/10 text-primary' : 'border-border text-muted-foreground hover:border-primary/30'}`}
-              style={{ fontFamily: font }}
-            >
-              <CalendarClock size={13} /> {t.scheduleLater}
-            </button>
-          </div>
-          {scheduledValue !== null && (
-            <input
-              type="datetime-local"
-              value={scheduledValue}
-              min={minDatetimeLocal}
-              onChange={(e) => setScheduledValue(e.target.value || null)}
-              className="w-full px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-xl border border-border bg-background text-foreground text-xs sm:text-sm outline-none focus:ring-2 focus:ring-primary/30 transition-all"
-              dir="ltr"
-            />
-          )}
-        </Field>
       </div>
       <ActionButtons onClose={onClose} onSave={handleSave} saving={saving} font={font} t={t} />
     </Modal>
@@ -1480,6 +1362,7 @@ function AddQuizModal({
 // Opening this modal already requires canEditContent (checked by parent);
 // individual controls inside are additionally gated so a teacher who loses
 // canReorder / canEditContent mid-session (permissions refetch) can't act.
+// No scheduling here either — this exam stays tied to its unit/lesson only.
 // ═══════════════════════════════════════════════════════════════
 function ExamManageModal({
   courseId,
@@ -1521,15 +1404,7 @@ function ExamManageModal({
     durationMinutes: lesson.exam?.durationMinutes ? String(lesson.exam.durationMinutes) : '',
     passingScore: String(lesson.exam?.passingScore ?? 50),
   });
-  const [scheduledValue, setScheduledValue] = useState<string | null>(() => {
-    if (lesson.exam?.scheduledAt) {
-      const d = new Date(lesson.exam.scheduledAt);
-      return isNaN(d.getTime()) ? null : toDatetimeLocal(d);
-    }
-    return null;
-  });
   const [savingSettings, setSavingSettings] = useState(false);
-  const minDatetimeLocal = toDatetimeLocal(new Date());
 
   const handleSaveSettings = async () => {
     if (!guard(permissions.canEditContent)) return;
@@ -1538,11 +1413,10 @@ function ExamManageModal({
       return;
     }
     setSavingSettings(true);
-    const scheduledAt = scheduledValue ? new Date(scheduledValue).toISOString() : null;
     await fetch('/api/admin/lessons', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: lesson.id, action: 'updateExam', ...settings, scheduledAt }),
+      body: JSON.stringify({ id: lesson.id, action: 'updateExam', ...settings }),
     });
     toast.success(t.updatedOk);
     setSavingSettings(false);
@@ -1782,53 +1656,6 @@ function ExamManageModal({
                 />
               </Field>
             </div>
-            <Field label={t.scheduleLabel} hint={t.scheduleHint} font={font}>
-              <div className="grid grid-cols-2 gap-1.5 sm:gap-2 mb-1.5 sm:mb-2">
-                <button
-                  type="button"
-                  onClick={() => setScheduledValue(null)}
-                  className={`flex items-center justify-center gap-1.5 py-1.5 rounded-xl border text-[10px] sm:text-xs font-bold transition-all ${scheduledValue === null ? 'border-primary bg-primary/10 text-primary' : 'border-border text-muted-foreground'}`}
-                  style={{ fontFamily: font }}
-                >
-                  <CalendarCheck2 size={13} /> {t.scheduleNow}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (scheduledValue === null) {
-                      const tomorrow = new Date();
-                      tomorrow.setDate(tomorrow.getDate() + 1);
-                      tomorrow.setHours(8, 0, 0, 0);
-                      setScheduledValue(toDatetimeLocal(tomorrow));
-                    }
-                  }}
-                  className={`flex items-center justify-center gap-1.5 py-1.5 rounded-xl border text-[10px] sm:text-xs font-bold transition-all ${scheduledValue !== null ? 'border-primary bg-primary/10 text-primary' : 'border-border text-muted-foreground'}`}
-                  style={{ fontFamily: font }}
-                >
-                  <CalendarClock size={13} /> {t.scheduleLater}
-                </button>
-              </div>
-              {scheduledValue !== null && (
-                <div className="flex items-center gap-2">
-                  <input
-                    type="datetime-local"
-                    value={scheduledValue}
-                    min={minDatetimeLocal}
-                    onChange={(e) => setScheduledValue(e.target.value || null)}
-                    className="flex-1 px-2.5 sm:px-3 py-1.5 rounded-xl border border-border bg-background text-foreground text-xs sm:text-sm outline-none focus:ring-2 focus:ring-primary/30"
-                    dir="ltr"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setScheduledValue(null)}
-                    className="text-[10px] sm:text-xs text-muted-foreground hover:text-red-500 flex items-center gap-1"
-                    style={{ fontFamily: font }}
-                  >
-                    <CalendarX2 size={11} /> {t.clearSchedule}
-                  </button>
-                </div>
-              )}
-            </Field>
             <div className="flex justify-end">
               <button
                 onClick={handleSaveSettings}

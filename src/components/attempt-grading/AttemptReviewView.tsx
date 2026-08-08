@@ -1,4 +1,3 @@
-//src\components\attempt-grading\AttemptGradingView.tsx
 'use client';
 import React, { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
@@ -7,21 +6,23 @@ import { T, type Lang } from './translations';
 import { formatDate } from './helpers';
 import type { AttemptDetail } from './types';
 import McqCard from './McqCard';
-import EssayCard from './EssayCard';
+import EssayResultCard from './EssayResultCard';
 
-export default function AttemptGradingView({
+export default function AttemptReviewView({
   attemptId,
+  fetchUrl,
   lang,
   font,
   backLabel,
-  getBackHref,
+  backHref,
 }: {
   attemptId: string;
+  /** Full API path to GET the attempt from — differs by role. */
+  fetchUrl: string;
   lang: Lang;
   font?: string;
   backLabel: string;
-  /** Resolves the back-button destination once the exam's courseId is known. */
-  getBackHref: (courseId: number) => string;
+  backHref: string;
 }) {
   const router = useRouter();
   const t = T[lang];
@@ -35,7 +36,7 @@ export default function AttemptGradingView({
     setLoading(true);
     setError(false);
     try {
-      const res = await fetch(`/api/teacher/attempts/${attemptId}`);
+      const res = await fetch(fetchUrl);
       if (res.status === 401) {
         router.replace('/sign-up-login-screen');
         return;
@@ -51,59 +52,24 @@ export default function AttemptGradingView({
     } finally {
       setLoading(false);
     }
-  }, [attemptId, router]);
+  }, [fetchUrl, router]);
 
   useEffect(() => {
     if (attemptId) fetchAttempt();
   }, [attemptId, fetchAttempt]);
 
-  const handleGraded = (
-    answerId: number,
-    gradedScore: number,
-    isCorrect: boolean,
-    graderNotes: string | null
-  ) => {
-    setData((prev) => {
-      if (!prev) return prev;
-      const answers = prev.answers.map((a) =>
-        a.answerId === answerId ? { ...a, gradedScore, isCorrect, graderNotes } : a
-      );
-      const allGraded = answers.every((a) => a.isCorrect !== null);
-      let score = prev.attempt.score;
-      let passed = prev.attempt.passed;
-      if (allGraded) {
-        const totalMark = answers.reduce((sum, a) => sum + a.question.mark, 0);
-        const earned = answers.reduce(
-          (sum, a) =>
-            sum +
-            (a.question.type === 'essay'
-              ? (a.gradedScore ?? 0)
-              : a.isCorrect
-                ? a.question.mark
-                : 0),
-          0
-        );
-        score = totalMark > 0 ? Math.round((earned / totalMark) * 100) : 0;
-        passed = score >= prev.exam.passingScore;
-      }
-      return { ...prev, answers, attempt: { ...prev.attempt, score, passed } };
-    });
-  };
-
   return (
     <>
-      {data && (
-        <div className="flex items-center gap-3 mb-6 flex-wrap">
-          <button
-            onClick={() => router.push(getBackHref(data.exam.courseId))}
-            className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
-            style={{ fontFamily: font }}
-          >
-            {isRtl ? <ArrowRight size={16} /> : <ArrowRight size={16} className="rotate-180" />}
-            {backLabel}
-          </button>
-        </div>
-      )}
+      <div className="flex items-center gap-3 mb-6 flex-wrap">
+        <button
+          onClick={() => router.push(backHref)}
+          className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
+          style={{ fontFamily: font }}
+        >
+          {isRtl ? <ArrowRight size={16} /> : <ArrowRight size={16} className="rotate-180" />}
+          {backLabel}
+        </button>
+      </div>
 
       {loading && (
         <div className="flex items-center justify-center py-20 gap-3">
@@ -186,14 +152,7 @@ export default function AttemptGradingView({
           <div className="flex flex-col gap-4">
             {data.answers.map((answer) =>
               answer.question.type === 'essay' ? (
-                <EssayCard
-                  key={answer.answerId}
-                  answer={answer}
-                  lang={lang}
-                  font={font}
-                  attemptId={attemptId}
-                  onGraded={handleGraded}
-                />
+                <EssayResultCard key={answer.answerId} answer={answer} lang={lang} font={font} />
               ) : (
                 <McqCard key={answer.answerId} answer={answer} lang={lang} font={font} />
               )

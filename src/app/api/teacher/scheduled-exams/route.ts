@@ -25,12 +25,12 @@ async function authorize(courseId?: number) {
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const courseId = Number(searchParams.get('courseId'));
-  
+
   const { error } = await authorize(courseId);
   if (error) return error;
 
   const where = courseId ? { courseId } : {};
-  
+
   const scheduledExams = await prisma.scheduledExam.findMany({
     where,
     include: {
@@ -42,7 +42,15 @@ export async function GET(req: NextRequest) {
         orderBy: { order: 'asc' },
       },
       attempts: {
-        include: { student: { select: { id: true, fullName: true, phone: string } } },
+        include: {
+          student: {
+            select: {
+              id: true,
+              fullName: true,
+              // , phone: string
+            },
+          },
+        },
         orderBy: { startedAt: 'desc' },
       },
     },
@@ -106,14 +114,15 @@ export async function PATCH(req: NextRequest) {
     where: { id: Number(id) },
     select: { courseId: true },
   });
-  if (!scheduledExam) return NextResponse.json({ error: 'Scheduled exam not found' }, { status: 404 });
+  if (!scheduledExam)
+    return NextResponse.json({ error: 'Scheduled exam not found' }, { status: 404 });
 
   const { user, error } = await authorize(scheduledExam.courseId);
   if (error) return error;
 
   if (action === 'update') {
     const { title, durationMinutes, passingScore, scheduledAt } = body;
-    
+
     let scheduledDate: Date | null = null;
     if (scheduledAt && typeof scheduledAt === 'string') {
       scheduledDate = new Date(scheduledAt);
@@ -200,7 +209,8 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({
       ok: true,
       hidden: true,
-      message: 'This question has already been answered by students, so it was hidden instead of deleted.',
+      message:
+        'This question has already been answered by students, so it was hidden instead of deleted.',
     });
   }
 

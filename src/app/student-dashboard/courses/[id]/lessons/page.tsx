@@ -76,6 +76,20 @@ interface Course {
   subject: string;
   teacher: { id: number; fullName: string; avatarUrl: string | null };
   units: UnitG[];
+  scheduledExams: Array<{
+    id: number;
+    title: string;
+    durationMinutes: number | null;
+    passingScore: number;
+    scheduledAt: string;
+    examQuestions: Array<{ id: number; order: number; mark: number }>;
+    attempts: Array<{
+      id: number;
+      score: number | null;
+      passed: boolean | null;
+      submittedAt: string | null;
+    }>;
+  }>;
 }
 
 const content = {
@@ -91,6 +105,7 @@ const content = {
     sidebarTitle: 'محتوى الكورس',
     scheduledExamsTitle: 'امتحانات مجدولة',
     lessons: 'درس',
+    questionsCount: 'سؤال',
     teacher: 'المدرس',
     selectLesson: 'اختر درسًا لتبدأ المشاهدة',
     examLesson: 'امتحان',
@@ -119,6 +134,7 @@ const content = {
     sidebarTitle: 'Course Content',
     scheduledExamsTitle: 'Scheduled Exams',
     lessons: 'lessons',
+    questionsCount: 'questions',
     teacher: 'Teacher',
     selectLesson: 'Select a lesson to start watching',
     examLesson: 'Exam',
@@ -309,20 +325,32 @@ function LessonRow({
 // Row for a standalone scheduled exam — availability depends only on
 // scheduledAt, never on sequence/progress of any other lesson.
 function ScheduledExamRow({
-  lesson,
+  exam,
   isActive,
   isRtl,
   font,
   onClick,
 }: {
-  lesson: Lesson;
+  exam: {
+    id: number;
+    title: string;
+    durationMinutes: number | null;
+    passingScore: number;
+    scheduledAt: string;
+    examQuestions: Array<{ id: number; order: number; mark: number }>;
+    attempts: Array<{
+      id: number;
+      score: number | null;
+      passed: boolean | null;
+      submittedAt: string | null;
+    }>;
+  };
   isActive: boolean;
   isRtl: boolean;
   font: string | undefined;
   onClick: () => void;
 }) {
-  const exam = lesson.exam!;
-  const available = isScheduledExamAvailable(exam.scheduledAt!);
+  const available = isScheduledExamAvailable(exam.scheduledAt);
   const attempt = exam.attempts[0];
 
   return (
@@ -347,10 +375,10 @@ function ScheduledExamRow({
           className={`text-xs font-semibold truncate ${isActive ? 'text-primary' : 'text-foreground'}`}
           style={{ fontFamily: font }}
         >
-          {lesson.title}
+          {exam.title}
         </p>
         <p className="text-xs text-amber-600 mt-0.5" dir="ltr">
-          {new Date(exam.scheduledAt!).toLocaleString(isRtl ? 'ar-EG' : 'en-EG', {
+          {new Date(exam.scheduledAt).toLocaleString(isRtl ? 'ar-EG' : 'en-EG', {
             dateStyle: 'medium',
             timeStyle: 'short',
           })}
@@ -361,9 +389,8 @@ function ScheduledExamRow({
 }
 
 // ── NEW: one unit's worth of sidebar content — header + its own
-// sequenced lessons + its own scheduled exams. Rendered once per unit
-// so scheduled exams are grouped under the unit that actually owns
-// them, and lock-chains never leak across unit boundaries.
+// sequenced lessons. Scheduled exams are now displayed separately
+// at the course level, not within units.
 function UnitSection({
   unit,
   activeLessonId,
@@ -380,9 +407,8 @@ function UnitSection({
   onSelect: (lesson: Lesson) => void;
 }) {
   const sequenced = getSequencedLessons(unit.lessons) as Lesson[];
-  const scheduled = unit.lessons.filter(isScheduledExam) as Lesson[];
 
-  if (sequenced.length === 0 && scheduled.length === 0) return null;
+  if (sequenced.length === 0) return null;
 
   return (
     <div>
@@ -408,28 +434,6 @@ function UnitSection({
           onClick={() => onSelect(lesson)}
         />
       ))}
-      {scheduled.length > 0 && (
-        <>
-          <div className="px-4 py-1.5 bg-muted/10">
-            <p
-              className="text-[11px] font-bold text-muted-foreground uppercase tracking-wide"
-              style={{ fontFamily: font }}
-            >
-              {t.scheduledExamsTitle}
-            </p>
-          </div>
-          {scheduled.map((lesson) => (
-            <ScheduledExamRow
-              key={lesson.id}
-              lesson={lesson}
-              isActive={activeLessonId === lesson.id}
-              isRtl={isRtl}
-              font={font}
-              onClick={() => onSelect(lesson)}
-            />
-          ))}
-        </>
-      )}
     </div>
   );
 }
@@ -530,6 +534,115 @@ function ExamPanel({
   );
 }
 
+function ScheduledExamPanel({
+  exam,
+  lang,
+  font,
+  courseId,
+}: {
+  exam: Course['scheduledExams'][number];
+  lang: 'ar' | 'en';
+  font: string | undefined;
+  courseId: number;
+}) {
+  const t = content[lang];
+  const isRtl = lang === 'ar';
+  const attempt = exam.attempts[0];
+  const hasAttempt = !!attempt?.submittedAt;
+  const isPassed = attempt?.passed === true;
+  const isFailed = attempt?.passed === false;
+  const isTimeLocked = new Date(exam.scheduledAt) > new Date();
+
+  return (
+    <div className="flex-1 flex flex-col items-center justify-center p-6 sm:p-8 gap-5 sm:gap-6 text-center">
+      <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl bg-amber-500/10 flex items-center justify-center">
+        <Clock size={32} className="text-amber-500 sm:hidden" />
+        <Clock size={40} className="text-amber-500 hidden sm:block" />
+      </div>
+      <div>
+        <p className="text-xs text-muted-foreground mb-1" style={{ fontFamily: font }}>
+          {t.scheduledExamsTitle}
+        </p>
+        <h2
+          className="text-lg sm:text-xl font-bold text-foreground px-2"
+          style={{ fontFamily: font }}
+        >
+          {exam.title}
+        </h2>
+      </div>
+      <div className="flex items-center gap-6 text-sm">
+        {exam.durationMinutes && (
+          <div className="flex flex-col items-center gap-1">
+            <Clock size={18} className="text-muted-foreground" />
+            <span className="font-bold text-foreground">{exam.durationMinutes}</span>
+            <span className="text-xs text-muted-foreground" style={{ fontFamily: font }}>
+              {t.examMinutes}
+            </span>
+          </div>
+        )}
+        <div className="flex flex-col items-center gap-1">
+          <Trophy size={18} className="text-muted-foreground" />
+          <span className="font-bold text-foreground">{exam.passingScore}%</span>
+          <span className="text-xs text-muted-foreground" style={{ fontFamily: font }}>
+            {t.examPassing}
+          </span>
+        </div>
+        <div className="flex flex-col items-center gap-1">
+          <ClipboardList size={18} className="text-muted-foreground" />
+          <span className="font-bold text-foreground">{exam.examQuestions.length}</span>
+          <span className="text-xs text-muted-foreground" style={{ fontFamily: font }}>
+            {t.questionsCount}
+          </span>
+        </div>
+      </div>
+      <div className="text-sm text-muted-foreground" dir="ltr" style={{ fontFamily: font }}>
+        {new Date(exam.scheduledAt).toLocaleString(isRtl ? 'ar-EG' : 'en-EG', {
+          dateStyle: 'medium',
+          timeStyle: 'short',
+        })}
+      </div>
+      {hasAttempt && (
+        <div
+          className={`w-full max-w-sm p-4 rounded-2xl border text-center ${isPassed ? 'bg-green-50 border-green-200' : isFailed ? 'bg-red-50 border-red-200' : 'bg-muted border-border'}`}
+        >
+          <p
+            className={`text-2xl font-extrabold mb-1 ${isPassed ? 'text-green-600' : isFailed ? 'text-red-500' : 'text-foreground'}`}
+          >
+            {attempt.score !== null ? `${attempt.score}%` : '—'}
+          </p>
+          <p
+            className={`text-sm font-bold ${isPassed ? 'text-green-600' : isFailed ? 'text-red-500' : 'text-muted-foreground'}`}
+            style={{ fontFamily: font }}
+          >
+            {isPassed ? t.examPassed : isFailed ? t.examFailed : t.examPending}
+          </p>
+        </div>
+      )}
+      {!attempt && !isTimeLocked && (
+        <p className="text-sm text-muted-foreground" style={{ fontFamily: font }}>
+          {t.examNotTaken}
+        </p>
+      )}
+      {isTimeLocked ? (
+        <ExamCountdownBadge
+          scheduledAt={exam.scheduledAt}
+          lang={lang}
+          font={font}
+          label={t.examOpensAt}
+        />
+      ) : (
+        <a
+          href={`/student-dashboard/scheduled-exams/${exam.id}`}
+          className="w-full sm:w-auto px-8 py-3 rounded-xl gradient-primary text-white font-bold text-sm hover:opacity-90 active:scale-95 transition-all"
+          style={{ fontFamily: font }}
+        >
+          {hasAttempt ? t.examRetake : t.examTake}
+        </a>
+      )}
+    </div>
+  );
+}
+
 // Vimeo embed locked down against easy downloading/re-sharing.
 function ProtectedPlayer({ vimeoId }: { vimeoId: string }) {
   return (
@@ -580,6 +693,7 @@ export default function StudentCourseLessonsPage({ params }: { params: Promise<{
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<'load' | 'notEnrolled' | null>(null);
   const [activeLesson, setActiveLesson] = useState<Lesson | null>(null);
+  const [activeScheduledExam, setActiveScheduledExam] = useState<Course['scheduledExams'][number] | null>(null);
   const [marking, setMarking] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [mobileListOpen, setMobileListOpen] = useState(false);
@@ -724,13 +838,15 @@ export default function StudentCourseLessonsPage({ params }: { params: Promise<{
 
         <div className="flex flex-col lg:flex-row flex-1 lg:overflow-hidden">
           <div className="flex-1 flex flex-col min-w-0 lg:overflow-y-auto order-1">
-            {!activeLesson ? (
+            {!activeLesson && !activeScheduledExam ? (
               <div className="flex-1 flex flex-col items-center justify-center gap-3 p-8 text-center">
                 <PlayCircle size={48} className="text-muted-foreground/30" />
                 <p className="text-muted-foreground text-sm" style={{ fontFamily: font }}>
-                  {noLessonsAtAll ? t.noLessons : t.selectLesson}
+                  {noLessonsAtAll && course?.scheduledExams.length === 0 ? t.noLessons : t.selectLesson}
                 </p>
               </div>
+            ) : activeScheduledExam ? (
+              <ScheduledExamPanel exam={activeScheduledExam} lang={lang} font={font} courseId={courseId} />
             ) : activeLesson.type === 'exam' ? (
               <ExamPanel lesson={activeLesson} lang={lang} font={font} courseId={courseId} />
             ) : activeLesson.video ? (
@@ -820,7 +936,7 @@ export default function StudentCourseLessonsPage({ params }: { params: Promise<{
             </button>
             {mobileListOpen && (
               <div className="max-h-[60vh] overflow-y-auto border-t border-border">
-                {noLessonsAtAll ? (
+                {noLessonsAtAll && course?.scheduledExams.length === 0 ? (
                   <p
                     className="p-4 text-xs text-muted-foreground text-center"
                     style={{ fontFamily: font }}
@@ -828,20 +944,49 @@ export default function StudentCourseLessonsPage({ params }: { params: Promise<{
                     {t.noLessons}
                   </p>
                 ) : (
-                  course.units.map((unit) => (
-                    <UnitSection
-                      key={unit.id}
-                      unit={unit}
-                      activeLessonId={activeLesson?.id}
-                      isRtl={isRtl}
-                      font={font}
-                      t={t}
-                      onSelect={(lesson) => {
-                        setActiveLesson(lesson);
-                        setMobileListOpen(false);
-                      }}
-                    />
-                  ))
+                  <>
+                    {course.units.map((unit) => (
+                      <UnitSection
+                        key={unit.id}
+                        unit={unit}
+                        activeLessonId={activeLesson?.id}
+                        isRtl={isRtl}
+                        font={font}
+                        t={t}
+                        onSelect={(lesson) => {
+                          setActiveLesson(lesson);
+                          setActiveScheduledExam(null);
+                          setMobileListOpen(false);
+                        }}
+                      />
+                    ))}
+                    {course.scheduledExams.length > 0 && (
+                      <>
+                        <div className="px-4 py-2 border-t border-border bg-muted/30">
+                          <p
+                            className="text-xs font-bold text-foreground truncate"
+                            style={{ fontFamily: font }}
+                          >
+                            {t.scheduledExamsTitle}
+                          </p>
+                        </div>
+                        {course.scheduledExams.map((exam) => (
+                          <ScheduledExamRow
+                            key={exam.id}
+                            exam={exam}
+                            isActive={activeScheduledExam?.id === exam.id}
+                            isRtl={isRtl}
+                            font={font}
+                            onClick={() => {
+                              setActiveScheduledExam(exam);
+                              setActiveLesson(null);
+                              setMobileListOpen(false);
+                            }}
+                          />
+                        ))}
+                      </>
+                    )}
+                  </>
                 )}
               </div>
             )}
@@ -876,7 +1021,7 @@ export default function StudentCourseLessonsPage({ params }: { params: Promise<{
                     {t.sidebarTitle}
                   </p>
                 </div>
-                {noLessonsAtAll ? (
+                {noLessonsAtAll && course?.scheduledExams.length === 0 ? (
                   <p
                     className="p-4 text-xs text-muted-foreground text-center"
                     style={{ fontFamily: font }}
@@ -884,17 +1029,49 @@ export default function StudentCourseLessonsPage({ params }: { params: Promise<{
                     {t.noLessons}
                   </p>
                 ) : (
-                  course.units.map((unit) => (
-                    <UnitSection
-                      key={unit.id}
-                      unit={unit}
-                      activeLessonId={activeLesson?.id}
-                      isRtl={isRtl}
-                      font={font}
-                      t={t}
-                      onSelect={(lesson) => setActiveLesson(lesson)}
-                    />
-                  ))
+                  <>
+                    {course.units.map((unit) => (
+                      <UnitSection
+                        key={unit.id}
+                        unit={unit}
+                        activeLessonId={activeLesson?.id}
+                        isRtl={isRtl}
+                        font={font}
+                        t={t}
+                        onSelect={(lesson) => {
+                          setActiveLesson(lesson);
+                          setActiveScheduledExam(null);
+                          setMobileListOpen(false);
+                        }}
+                      />
+                    ))}
+                    {course.scheduledExams.length > 0 && (
+                      <>
+                        <div className="px-4 py-2 border-t border-border bg-muted/30">
+                          <p
+                            className="text-xs font-bold text-foreground truncate"
+                            style={{ fontFamily: font }}
+                          >
+                            {t.scheduledExamsTitle}
+                          </p>
+                        </div>
+                        {course.scheduledExams.map((exam) => (
+                          <ScheduledExamRow
+                            key={exam.id}
+                            exam={exam}
+                            isActive={activeScheduledExam?.id === exam.id}
+                            isRtl={isRtl}
+                            font={font}
+                            onClick={() => {
+                              setActiveScheduledExam(exam);
+                              setActiveLesson(null);
+                              setMobileListOpen(false);
+                            }}
+                          />
+                        ))}
+                      </>
+                    )}
+                  </>
                 )}
               </div>
             )}

@@ -16,6 +16,7 @@ export async function GET() {
       subject: true, // ✅ was: subjectAr, subjectEn
       academicYear: true,
       price: true,
+      subscriptionPrice: true, // ✅ Add subscription option
       teacher: {
         select: {
           id: true,

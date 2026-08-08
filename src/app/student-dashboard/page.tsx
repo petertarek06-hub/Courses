@@ -467,13 +467,6 @@ export default function StudentDashboardPage() {
     return null;
   };
 
-  // An attempt has three possible states, not two:
-  //  - not submitted yet            → submittedAt is null
-  //  - submitted but still awaiting
-  //    manual grading of essay Qs   → submittedAt set, passed is null
-  //  - fully graded                 → submittedAt set, passed is true/false
-  // Previously only the first/third were distinguished, so an ungraded
-  // attempt (passed === null, which is falsy) rendered as "Failed".
   const examStatusBadge = (attempt: ExamAttempt) => {
     if (!attempt.submittedAt) {
       return (

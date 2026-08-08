@@ -3,19 +3,6 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getAuthUser } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 
-// POST — enroll the logged-in student in a course, paid from their balance
-// Body: { courseId: number, enrollmentType: 'full' | 'subscription' }
-//
-// Steps, all inside one $transaction so they succeed or fail together:
-//  1. Re-check the course exists and is visible.
-//  2. Re-check the student isn't already enrolled (defends against a
-//     double-click / double-submit race, on top of the DB-level
-//     @@unique([studentId, courseId]) on Enrollment).
-//  3. Re-check the student's balance covers the price (never trust a
-//     balance figure the client sent — always re-read from the DB here).
-//  4. Decrement balance, create Enrollment, create the ledger Transaction
-//     (type: 'purchase', topUpRequestId left null).
-//  5. For subscription enrollments, also create a Subscription record.
 export async function POST(req: NextRequest) {
   const user = await getAuthUser();
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -39,7 +26,10 @@ export async function POST(req: NextRequest) {
 
   // Validate subscription price is set for subscription enrollment
   if (enrollmentType === 'subscription' && !course.subscriptionPrice)
-    return NextResponse.json({ error: 'Subscription not available for this course' }, { status: 400 });
+    return NextResponse.json(
+      { error: 'Subscription not available for this course' },
+      { status: 400 }
+    );
 
   const existing = await prisma.enrollment.findUnique({
     where: { studentId_courseId: { studentId: user.id, courseId } },

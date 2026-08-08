@@ -1,3 +1,4 @@
+//src\app\courses-page\components\EnrollModal.tsx
 'use client';
 import React, { useEffect, useState, useCallback } from 'react';
 import {
@@ -248,10 +249,7 @@ export default function EnrollModal({ course, lang, onClose, onEnrolled }: Props
               {/* Enrollment type selector (if subscription available) */}
               {hasSubscription && (
                 <div className="mb-5">
-                  <p
-                    className="text-sm font-semibold text-foreground mb-2"
-                    style={fontStyle}
-                  >
+                  <p className="text-sm font-semibold text-foreground mb-2" style={fontStyle}>
                     {tx.enrollmentType}
                   </p>
                   <div className="grid grid-cols-2 gap-3">
@@ -291,10 +289,7 @@ export default function EnrollModal({ course, lang, onClose, onEnrolled }: Props
                     </button>
                   </div>
                   {enrollmentType === 'subscription' && (
-                    <p
-                      className="text-xs text-muted-foreground mt-2 text-center"
-                      style={fontStyle}
-                    >
+                    <p className="text-xs text-muted-foreground mt-2 text-center" style={fontStyle}>
                       {tx.subscriptionNote}
                     </p>
                   )}
@@ -330,7 +325,11 @@ export default function EnrollModal({ course, lang, onClose, onEnrolled }: Props
                       </div>
                       <span
                         className={`font-extrabold text-sm ${
-                          balance >= selectedPrice ? 'text-secondary' : enrollmentType === 'subscription' ? 'text-foreground' : 'text-destructive'
+                          balance >= selectedPrice
+                            ? 'text-secondary'
+                            : enrollmentType === 'subscription'
+                              ? 'text-foreground'
+                              : 'text-destructive'
                         }`}
                         style={fontStyle}
                       >
